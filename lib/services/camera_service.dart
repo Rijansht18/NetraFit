@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
 
 class CameraService {
@@ -13,6 +12,8 @@ class CameraService {
   bool _isInitialized = false;
   int _currentCameraIndex = 0;
   bool _isFrontCamera = true;
+  Completer<void>? _initializationCompleter;
+  bool _isDisposed = false;
 
   Future<void> initialize() async {
     _cameras = await availableCameras();
@@ -34,25 +35,42 @@ class CameraService {
   }
 
   Future<void> _initializeCameraController() async {
-    if (_cameraController != null) {
-      await _cameraController!.dispose();
+    // Cancel any pending initialization
+    if (_initializationCompleter != null && !_initializationCompleter!.isCompleted) {
+      _initializationCompleter!.completeError('Camera switched');
     }
 
-    _cameraController = CameraController(
-      _cameras[_currentCameraIndex],
-      ResolutionPreset.medium,
-      enableAudio: false,
-      imageFormatGroup: Platform.isAndroid
-          ? ImageFormatGroup.yuv420
-          : ImageFormatGroup.bgra8888,
-    );
+    _initializationCompleter = Completer<void>();
 
-    await _cameraController!.initialize();
-    _isInitialized = true;
+    if (_cameraController != null) {
+      await _cameraController!.dispose();
+      _cameraController = null;
+    }
+
+    try {
+      _cameraController = CameraController(
+        _cameras[_currentCameraIndex],
+        ResolutionPreset.medium,
+        enableAudio: false,
+        imageFormatGroup: Platform.isAndroid
+            ? ImageFormatGroup.yuv420
+            : ImageFormatGroup.bgra8888,
+      );
+
+      await _cameraController!.initialize();
+
+      _isInitialized = true;
+      _isDisposed = false;
+      _initializationCompleter!.complete();
+    } catch (e) {
+      _isInitialized = false;
+      _initializationCompleter!.completeError(e);
+      rethrow;
+    }
   }
 
   Future<void> switchCamera() async {
-    if (_cameras.length < 2) return; // Only one camera available
+    if (_cameras.length < 2) return;
 
     _currentCameraIndex = (_currentCameraIndex + 1) % _cameras.length;
     _isFrontCamera = _cameras[_currentCameraIndex].lensDirection == CameraLensDirection.front;
@@ -60,65 +78,46 @@ class CameraService {
     await _initializeCameraController();
   }
 
+  Future<InputImage> captureImage() async {
+    // Wait for camera to be fully initialized
+    if (_initializationCompleter != null && !_initializationCompleter!.isCompleted) {
+      await _initializationCompleter!.future;
+    }
+
+    if (_cameraController == null ||
+        !_cameraController!.value.isInitialized ||
+        _isDisposed) {
+      throw Exception('Camera not initialized or disposed');
+    }
+
+    try {
+      final image = await _cameraController!.takePicture();
+      return InputImage.fromFilePath(image.path);
+    } catch (e) {
+      print('Error capturing image: $e');
+      throw Exception('Failed to capture image: $e');
+    }
+  }
+
   CameraController? get cameraController => _cameraController;
-  bool get isInitialized => _isInitialized;
+
+  bool get isInitialized => _isInitialized &&
+      _cameraController != null &&
+      _cameraController!.value.isInitialized &&
+      !_isDisposed;
+
   bool get isFrontCamera => _isFrontCamera;
   int get availableCamerasCount => _cameras.length;
 
-  Future<InputImage> captureImage() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) {
-      throw Exception('Camera not initialized');
-    }
-
-    final image = await _cameraController!.takePicture();
-    return InputImage.fromFilePath(image.path);
-  }
-
-  InputImage? convertCameraImage(CameraImage image) {
-    try {
-      final WriteBuffer allBytes = WriteBuffer();
-      for (final Plane plane in image.planes) {
-        allBytes.putUint8List(plane.bytes);
-      }
-      final bytes = allBytes.done().buffer.asUint8List();
-
-      final inputImageData = InputImageMetadata(
-        size: ui.Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: _getRotation(),
-        format: InputImageFormat.nv21,
-        bytesPerRow: image.planes.first.bytesPerRow,
-      );
-
-      return InputImage.fromBytes(
-        bytes: bytes,
-        metadata: inputImageData,
-      );
-    } catch (e) {
-      print('Error converting camera image: $e');
-      return null;
-    }
-  }
-
-  InputImageRotation _getRotation() {
-    if (Platform.isAndroid) {
-      return InputImageRotation.rotation0deg;
-    } else {
-      // iOS rotation handling
-      switch (_cameraController!.description.sensorOrientation) {
-        case 90:
-          return InputImageRotation.rotation90deg;
-        case 180:
-          return InputImageRotation.rotation180deg;
-        case 270:
-          return InputImageRotation.rotation270deg;
-        default:
-          return InputImageRotation.rotation0deg;
-      }
-    }
-  }
-
   Future<void> dispose() async {
+    // Cancel any pending initialization
+    if (_initializationCompleter != null && !_initializationCompleter!.isCompleted) {
+      _initializationCompleter!.completeError('Camera disposed');
+    }
+
     await _cameraController?.dispose();
+    _cameraController = null;
     _isInitialized = false;
+    _isDisposed = true;
   }
 }

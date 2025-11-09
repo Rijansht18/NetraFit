@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:camera/camera.dart';
@@ -23,6 +25,7 @@ class _FaceDetectionScreenState extends State<FaceDetectionScreen> {
   bool _isDetecting = false;
   int _detectionCount = 0;
   bool _isSwitchingCamera = false;
+  Timer? _detectionTimer;
 
   @override
   void initState() {
@@ -55,14 +58,30 @@ class _FaceDetectionScreenState extends State<FaceDetectionScreen> {
   }
 
   void _startFaceDetection() {
-    // Start periodic face detection every 3 seconds
-    Future.delayed(const Duration(seconds: 1), () {
+    // Stop any existing timer
+    _detectionTimer?.cancel();
+
+    // Start new periodic detection
+    _detectionTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       _detectFaces();
     });
   }
 
+  void _stopFaceDetection() {
+    _detectionTimer?.cancel();
+    _detectionTimer = null;
+  }
+
   Future<void> _detectFaces() async {
-    if (_isDetecting || !_cameraService.isInitialized || _isSwitchingCamera) return;
+    if (_isDetecting ||
+        !_cameraService.isInitialized ||
+        _isSwitchingCamera) {
+      return;
+    }
 
     _isDetecting = true;
     try {
@@ -77,35 +96,43 @@ class _FaceDetectionScreenState extends State<FaceDetectionScreen> {
       }
     } catch (e) {
       print('Face detection error: $e');
+      // Don't update UI on temporary errors during camera switch
     } finally {
       _isDetecting = false;
-      // Continue detection after a delay
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) _detectFaces();
-      });
     }
   }
 
   Future<void> _switchCamera() async {
     if (_isSwitchingCamera || _cameraService.availableCamerasCount < 2) return;
 
+    // Stop detection during camera switch
+    _stopFaceDetection();
+
     setState(() {
       _isSwitchingCamera = true;
+      _currentFaceShape = FaceShape.unknown;
     });
 
     try {
       await _cameraService.switchCamera();
-      // Reset detection when camera switches
-      setState(() {
-        _currentFaceShape = FaceShape.unknown;
-        _detectionCount = 0;
-      });
+
+      // Restart detection after successful switch
+      if (mounted) {
+        _startFaceDetection();
+      }
     } catch (e) {
       print('Error switching camera: $e');
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to switch camera: $e';
+        });
+      }
     } finally {
-      setState(() {
-        _isSwitchingCamera = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isSwitchingCamera = false;
+        });
+      }
     }
   }
 
@@ -130,35 +157,49 @@ class _FaceDetectionScreenState extends State<FaceDetectionScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Shape name
-          Text(
-            _currentFaceShape.name,
-            style: TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: _currentFaceShape.color,
+          if (_isSwitchingCamera) ...[
+            const CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
             ),
-          ),
-          const SizedBox(height: 8),
-
-          // Shape description
-          Text(
-            _currentFaceShape.description,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 16,
-              color: Colors.white70,
+            const SizedBox(height: 16),
+            const Text(
+              'Switching Camera...',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
+          ] else ...[
+            // Shape name
+            Text(
+              _currentFaceShape.name,
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: _currentFaceShape.color,
+              ),
+            ),
+            const SizedBox(height: 8),
 
-          // Detection indicator
-          _buildShapeIndicator(),
+            // Shape description
+            Text(
+              _currentFaceShape.description,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 16),
 
-          const SizedBox(height: 8),
+            // Detection indicator
+            _buildShapeIndicator(),
 
-          // Tips
-          _buildTips(),
+            const SizedBox(height: 8),
+
+            // Tips
+            _buildTips(),
+          ],
         ],
       ),
     );
@@ -239,20 +280,21 @@ class _FaceDetectionScreenState extends State<FaceDetectionScreen> {
             ),
           const SizedBox(height: 16),
           // Camera info
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              _cameraService.isFrontCamera ? 'Front' : 'Back',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
+          if (!_isSwitchingCamera)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                _cameraService.isFrontCamera ? 'Front' : 'Back',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -358,7 +400,7 @@ class _FaceDetectionScreenState extends State<FaceDetectionScreen> {
         elevation: 0,
         actions: [
           // Camera info in app bar
-          if (_cameraService.availableCamerasCount > 1)
+          if (_cameraService.availableCamerasCount > 1 && !_isSwitchingCamera)
             Padding(
               padding: const EdgeInsets.only(right: 16.0),
               child: Row(
@@ -383,7 +425,7 @@ class _FaceDetectionScreenState extends State<FaceDetectionScreen> {
             ),
           IconButton(
             icon: const Icon(Icons.info_outline),
-            onPressed: () {
+            onPressed: _isSwitchingCamera ? null : () {
               showDialog(
                 context: context,
                 builder: (context) => AlertDialog(
@@ -419,25 +461,40 @@ class _FaceDetectionScreenState extends State<FaceDetectionScreen> {
           Column(
             children: [
               Expanded(
-                child: CameraPreviewWidget(
+                child: _isSwitchingCamera
+                    ? Container(
+                  color: Colors.black,
+                  child: const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          'Switching Camera...',
+                          style: TextStyle(color: Colors.white, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+                    : CameraPreviewWidget(
                   controller: _cameraService.cameraController,
                 ),
               ),
               _buildResultPanel(),
             ],
           ),
-          _buildCameraControls(),
+          if (!_isSwitchingCamera) _buildCameraControls(),
         ],
       ),
-      floatingActionButton: _cameraService.availableCamerasCount > 1
+      floatingActionButton: _cameraService.availableCamerasCount > 1 && !_isSwitchingCamera
           ? FloatingActionButton(
-        onPressed: _isSwitchingCamera ? null : _switchCamera,
+        onPressed: _switchCamera,
         backgroundColor: Colors.deepPurple,
-        child: _isSwitchingCamera
-            ? const CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-        )
-            : Icon(
+        child: Icon(
           _cameraService.isFrontCamera
               ? Icons.camera_rear
               : Icons.camera_front,
@@ -469,6 +526,7 @@ class _FaceDetectionScreenState extends State<FaceDetectionScreen> {
 
   @override
   void dispose() {
+    _stopFaceDetection();
     _cameraService.dispose();
     _faceDetector.dispose();
     super.dispose();
