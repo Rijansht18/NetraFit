@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'screens/face_detection_screen.dart';
+import 'package:netrafit_glasses/screens/home_screen.dart';
 
 List<CameraDescription> cameras = [];
 
@@ -22,13 +22,13 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Netrafit - Face Shape Detector',
+      title: 'Netrafit - Face Shape & Glasses Try-On',
       theme: ThemeData(
-        primarySwatch: Colors.deepPurple,
+        primarySwatch: Colors.blue,
         useMaterial3: true,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const FaceDetectionScreen(),
+      home: const HomeScreen(),
       debugShowCheckedModeBanner: false,
     );
   }

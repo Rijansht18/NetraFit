@@ -1,10 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
-import 'package:google_ml_kit/google_ml_kit.dart';
+import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
 class CameraService {
   CameraController? _cameraController;
@@ -94,7 +93,6 @@ class CameraService {
       final image = await _cameraController!.takePicture();
       return InputImage.fromFilePath(image.path);
     } catch (e) {
-      print('Error capturing image: $e');
       throw Exception('Failed to capture image: $e');
     }
   }

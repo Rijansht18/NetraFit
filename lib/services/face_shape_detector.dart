@@ -1,5 +1,6 @@
 import 'dart:math';
-import 'package:google_ml_kit/google_ml_kit.dart';
+import 'dart:math' as math;
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import '../models/face_shape.dart';
 
 class FaceShapeDetectorService {
@@ -7,13 +8,14 @@ class FaceShapeDetectorService {
   bool _isProcessing = false;
 
   FaceShapeDetectorService()
-      : _faceDetector = GoogleMlKit.vision.faceDetector(
-    FaceDetectorOptions(
+      : _faceDetector = FaceDetector(
+    options: FaceDetectorOptions(
       enableContours: true,
       enableClassification: true,
       enableLandmarks: true,
       enableTracking: true,
       performanceMode: FaceDetectorMode.accurate,
+      minFaceSize: 0.1,
     ),
   );
 
@@ -29,7 +31,6 @@ class FaceShapeDetectorService {
       final face = faces.first;
       return _analyzeFaceShape(face);
     } catch (e) {
-      print('Face detection error: $e');
       return FaceShape.unknown;
     } finally {
       _isProcessing = false;
@@ -71,8 +72,6 @@ class FaceShapeDetectorService {
 
       final jawToForeheadRatio = jawWidth / foreheadWidth;
 
-      print('Face Analysis - Height/Width: $heightToWidthRatio, Jaw/Forehead: $jawToForeheadRatio');
-
       return _determineShape(
         heightToWidthRatio,
         jawToForeheadRatio,
@@ -80,7 +79,6 @@ class FaceShapeDetectorService {
         jawWidth,
       );
     } catch (e) {
-      print('Face shape analysis error: $e');
       return FaceShape.unknown;
     }
   }
@@ -107,7 +105,7 @@ class FaceShapeDetectorService {
     }
   }
 
-  double _calculateDistance(Point point1, Point point2) {
+  double _calculateDistance(math.Point<int> point1, math.Point<int> point2) {
     final dx = point1.x - point2.x;
     final dy = point1.y - point2.y;
     return sqrt(dx * dx + dy * dy);
