@@ -1,0 +1,8 @@
+/venv
+/uploads
+/images
+/Face_Shape
+
+__pycache__/
+*.py[cod]
+*.pyo
