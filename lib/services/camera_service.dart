@@ -1,121 +1,101 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
-
 import 'package:camera/camera.dart';
-import 'package:google_mlkit_commons/google_mlkit_commons.dart';
+import 'package:http/http.dart' as http;
 
 class CameraService {
-  CameraController? _cameraController;
-  late List<CameraDescription> _cameras;
+  static const String baseUrl = 'http://192.168.1.80:5000'; // Change to your computer's IP
+
+  CameraController? _controller;
   bool _isInitialized = false;
-  int _currentCameraIndex = 0;
-  bool _isFrontCamera = true;
-  Completer<void>? _initializationCompleter;
-  bool _isDisposed = false;
+  bool _isProcessing = false;
 
-  Future<void> initialize() async {
-    _cameras = await availableCameras();
+  CameraController? get controller => _controller;
+  bool get isInitialized => _isInitialized;
+  bool get isProcessing => _isProcessing;
 
-    // Find front camera first
-    _currentCameraIndex = _findFrontCameraIndex();
-    _isFrontCamera = true;
-
-    await _initializeCameraController();
-  }
-
-  int _findFrontCameraIndex() {
-    for (int i = 0; i < _cameras.length; i++) {
-      if (_cameras[i].lensDirection == CameraLensDirection.front) {
-        return i;
-      }
-    }
-    return 0; // Fallback to first camera
-  }
-
-  Future<void> _initializeCameraController() async {
-    // Cancel any pending initialization
-    if (_initializationCompleter != null && !_initializationCompleter!.isCompleted) {
-      _initializationCompleter!.completeError('Camera switched');
-    }
-
-    _initializationCompleter = Completer<void>();
-
-    if (_cameraController != null) {
-      await _cameraController!.dispose();
-      _cameraController = null;
-    }
-
+  // Initialize camera
+  Future<void> initializeCamera() async {
     try {
-      _cameraController = CameraController(
-        _cameras[_currentCameraIndex],
-        ResolutionPreset.medium,
-        enableAudio: false,
-        imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.yuv420
-            : ImageFormatGroup.bgra8888,
+      final cameras = await availableCameras();
+
+      // Find front camera
+      final frontCamera = cameras.firstWhere(
+            (camera) => camera.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
       );
 
-      await _cameraController!.initialize();
+      _controller = CameraController(
+        frontCamera,
+        ResolutionPreset.medium,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
 
+      await _controller!.initialize();
       _isInitialized = true;
-      _isDisposed = false;
-      _initializationCompleter!.complete();
+      print('✓ Camera initialized successfully');
     } catch (e) {
-      _isInitialized = false;
-      _initializationCompleter!.completeError(e);
-      rethrow;
+      print('✗ Camera initialization error: $e');
+      throw Exception('Failed to initialize camera: $e');
     }
   }
 
-  Future<void> switchCamera() async {
-    if (_cameras.length < 2) return;
-
-    _currentCameraIndex = (_currentCameraIndex + 1) % _cameras.length;
-    _isFrontCamera = _cameras[_currentCameraIndex].lensDirection == CameraLensDirection.front;
-
-    await _initializeCameraController();
-  }
-
-  Future<InputImage> captureImage() async {
-    // Wait for camera to be fully initialized
-    if (_initializationCompleter != null && !_initializationCompleter!.isCompleted) {
-      await _initializationCompleter!.future;
+  // Capture and process frame
+  Future<Map<String, dynamic>> captureAndProcessFrame({
+    required String frameFilename,
+    required String size,
+  }) async {
+    if (_controller == null || !_isInitialized) {
+      throw Exception('Camera not initialized');
     }
 
-    if (_cameraController == null ||
-        !_cameraController!.value.isInitialized ||
-        _isDisposed) {
-      throw Exception('Camera not initialized or disposed');
+    if (_isProcessing) {
+      throw Exception('Already processing frame');
     }
+
+    _isProcessing = true;
 
     try {
-      final image = await _cameraController!.takePicture();
-      return InputImage.fromFilePath(image.path);
+      // Capture image
+      final image = await _controller!.takePicture();
+      final imageFile = File(image.path);
+
+      // Convert image to base64
+      final imageBytes = await imageFile.readAsBytes();
+      final base64Image = base64Encode(imageBytes);
+      final imageDataUrl = 'data:image/jpeg;base64,$base64Image';
+
+      // Send to backend for processing
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/process_frame'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'image': imageDataUrl,
+          'frame': frameFilename,
+          'size': size,
+        }),
+      );
+
+      _isProcessing = false;
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data;
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
     } catch (e) {
-      throw Exception('Failed to capture image: $e');
+      _isProcessing = false;
+      throw Exception('Frame processing error: $e');
     }
   }
 
-  CameraController? get cameraController => _cameraController;
-
-  bool get isInitialized => _isInitialized &&
-      _cameraController != null &&
-      _cameraController!.value.isInitialized &&
-      !_isDisposed;
-
-  bool get isFrontCamera => _isFrontCamera;
-  int get availableCamerasCount => _cameras.length;
-
-  Future<void> dispose() async {
-    // Cancel any pending initialization
-    if (_initializationCompleter != null && !_initializationCompleter!.isCompleted) {
-      _initializationCompleter!.completeError('Camera disposed');
-    }
-
-    await _cameraController?.dispose();
-    _cameraController = null;
+  // Dispose camera controller
+  void dispose() {
+    _controller?.dispose();
     _isInitialized = false;
-    _isDisposed = true;
+    _isProcessing = false;
   }
 }

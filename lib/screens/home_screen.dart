@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:netrafit_glasses/screens/face_detection_screen.dart';
-import 'package:netrafit_glasses/screens/glasses_tryon_screen.dart';
+import 'upload_screen.dart';
+import 'real_time_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -9,145 +9,77 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Netrafit'),
+        title: const Text('Virtual Frame Try-On'),
         backgroundColor: Colors.blue,
-        elevation: 0,
+        foregroundColor: Colors.white,
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.blue.shade100,
-              Colors.white,
-            ],
-          ),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // App Logo/Title
-              const Icon(
-                Icons.face_retouching_natural,
-                size: 80,
+      body: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.face_retouching_natural,
+              size: 100,
+              color: Colors.blue,
+            ),
+            const SizedBox(height: 40),
+            const Text(
+              'Virtual Frame Try-On',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
                 color: Colors.blue,
               ),
-              const SizedBox(height: 20),
-              const Text(
-                'Netrafit',
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue,
-                ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Try glasses frames virtually using AI',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey,
               ),
-              const SizedBox(height: 10),
-              const Text(
-                'Face Analysis & Virtual Try-On',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
-                ),
-              ),
-              const SizedBox(height: 50),
-
-              // Feature Buttons
-              _buildFeatureButton(
-                context,
-                icon: Icons.face,
-                title: 'Face Shape Detection',
-                subtitle: 'Discover your face shape',
-                onTap: () {
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 50),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (context) => const FaceDetectionScreen(),
-                    ),
+                    MaterialPageRoute(builder: (context) => const UploadScreen()),
                   );
                 },
-                color: Colors.green,
-              ),
-
-              const SizedBox(height: 20),
-
-              _buildFeatureButton(
-                context,
-                icon: Icons.visibility,
-                title: 'Virtual Glasses Try-On',
-                subtitle: 'Try different glasses frames',
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const GlassesTryOnScreen(),
-                    ),
-                  );
-                },
-                color: Colors.blue,
-              ),
-
-              const SizedBox(height: 30),
-
-              // Info Text
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 40),
-                child: Text(
-                  'Choose a feature to get started. Ensure good lighting and face the camera directly for best results.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 14,
-                  ),
+                icon: const Icon(Icons.upload),
+                label: const Text('Upload Photo'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
                 ),
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFeatureButton(
-      BuildContext context, {
-        required IconData icon,
-        required String title,
-        required String subtitle,
-        required VoidCallback onTap,
-        required Color color,
-      }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 30),
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(15),
-        ),
-        child: ListTile(
-          leading: Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
-              shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          title: Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const RealTimeScreen()),
+                  );
+                },
+                icon: const Icon(Icons.camera),
+                label: const Text('Real-time Try-On'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+              ),
             ),
-          ),
-          subtitle: Text(subtitle),
-          trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-          onTap: onTap,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 8,
-          ),
+          ],
         ),
       ),
     );
