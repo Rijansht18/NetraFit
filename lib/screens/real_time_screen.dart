@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:provider/provider.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'dart:convert';
 import '../providers/frame_provider.dart';
 import '../services/camera_service.dart';
 import '../widgets/frame_card.dart';
 import '../widgets/size_selector.dart';
 
 class RealTimeScreen extends StatefulWidget {
-  const RealTimeScreen({super.key});
+  final List<String>? recommendedFrameFilenames;
+  
+  const RealTimeScreen({super.key, this.recommendedFrameFilenames});
 
   @override
   State<RealTimeScreen> createState() => _RealTimeScreenState();
@@ -19,12 +22,8 @@ class _RealTimeScreenState extends State<RealTimeScreen> {
   String _selectedFrame = '';
   String _selectedSize = 'medium';
   String? _processedImage;
-  String _faceShape = 'Unknown';
-  String _distanceMessage = 'No face detected';
-  String _distanceStatus = 'unknown';
   bool _isProcessing = false;
   bool _isCameraInitialized = false;
-  bool _showCameraPreview = true;
 
   final Map<String, String> frameSizes = {
     'small': 'Small',
@@ -40,12 +39,24 @@ class _RealTimeScreenState extends State<RealTimeScreen> {
 
     // Load frames
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<FrameProvider>(context, listen: false).loadFrames().then((_) {
-        final frames = Provider.of<FrameProvider>(context, listen: false).frames;
+      final frameProvider = Provider.of<FrameProvider>(context, listen: false);
+      frameProvider.loadFrames().then((_) {
+        final frames = frameProvider.frames;
         if (frames.isNotEmpty && _selectedFrame.isEmpty) {
-          setState(() {
-            _selectedFrame = frames.first.filename;
-          });
+          // If recommended frames are provided, use first recommended frame
+          if (widget.recommendedFrameFilenames != null && widget.recommendedFrameFilenames!.isNotEmpty) {
+            setState(() {
+              _selectedFrame = widget.recommendedFrameFilenames!.first;
+            });
+          } else {
+            setState(() {
+              _selectedFrame = frames.first.filename;
+            });
+          }
+          // Auto-start processing when frame is selected
+          if (_isCameraInitialized) {
+            _startRealtimeProcessing();
+          }
         }
       });
     });
@@ -53,30 +64,57 @@ class _RealTimeScreenState extends State<RealTimeScreen> {
 
   Future<void> _initializeCamera() async {
     try {
+      print('🔄 Initializing camera in RealTimeScreen...');
       await _cameraService.initializeCamera();
-      setState(() {
-        _isCameraInitialized = true;
-      });
+      
+      if (_cameraService.isInitialized && _cameraService.controller != null) {
+        print('✓ Camera initialized successfully in RealTimeScreen');
+        print('  - Controller initialized: ${_cameraService.controller!.value.isInitialized}');
+        print('  - Preview size: ${_cameraService.controller!.value.previewSize}');
+        
+        setState(() {
+          _isCameraInitialized = true;
+        });
+        
+        // Auto-start processing if frame is already selected
+        if (_selectedFrame.isNotEmpty) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              _startRealtimeProcessing();
+            }
+          });
+        }
+      } else {
+        throw Exception('Camera controller is null or not initialized');
+      }
     } catch (e) {
-      print('Camera initialization failed: $e');
-      Fluttertoast.showToast(msg: 'Camera initialization failed');
+      print('✗ Camera initialization failed in RealTimeScreen: $e');
+      final errorMsg = _cameraService.initializationError ?? 'Camera initialization failed: $e';
+      setState(() {
+        _isCameraInitialized = false;
+      });
+      Fluttertoast.showToast(
+        msg: errorMsg.length > 50 ? 'Camera initialization failed' : errorMsg,
+        toastLength: Toast.LENGTH_LONG,
+      );
     }
   }
 
   void _startRealtimeProcessing() {
     if (_selectedFrame.isEmpty) {
-      Fluttertoast.showToast(msg: 'Please select a frame first');
-      return;
+      return; // Wait for frame selection
     }
 
     if (!_isCameraInitialized) {
-      Fluttertoast.showToast(msg: 'Camera not ready');
-      return;
+      return; // Wait for camera initialization
+    }
+
+    if (_isProcessing) {
+      return; // Already processing
     }
 
     setState(() {
       _isProcessing = true;
-      _showCameraPreview = false;
     });
 
     _processFramesLoop();
@@ -85,7 +123,6 @@ class _RealTimeScreenState extends State<RealTimeScreen> {
   void _stopRealtimeProcessing() {
     setState(() {
       _isProcessing = false;
-      _showCameraPreview = true;
       _processedImage = null;
     });
   }
@@ -102,28 +139,16 @@ class _RealTimeScreenState extends State<RealTimeScreen> {
           setState(() {
             if (result['success'] == true) {
               _processedImage = result['processed_image'];
-              _faceShape = result['face_shape'] ?? 'Unknown';
-              _distanceMessage = result['distance_message'] ?? 'No face detected';
-              _distanceStatus = result['distance_status'] ?? 'unknown';
-            } else {
-              _faceShape = 'Error';
-              _distanceMessage = result['error'] ?? 'Processing failed';
-              _distanceStatus = 'error';
             }
           });
         }
       } catch (e) {
-        if (mounted && _isProcessing) {
-          setState(() {
-            _faceShape = 'Error';
-            _distanceMessage = 'Processing error: $e';
-            _distanceStatus = 'error';
-          });
-        }
+        print('✗ Error processing frame: $e');
+        // Continue processing even on error
       }
 
-      // Add delay between frames (2 FPS for better performance)
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Optimized delay - faster processing for smoother experience
+      await Future.delayed(const Duration(milliseconds: 300));
     }
   }
 
@@ -132,16 +157,7 @@ class _RealTimeScreenState extends State<RealTimeScreen> {
       setState(() {
         _selectedFrame = newFrame;
       });
-
-      // Restart processing if active
-      if (_isProcessing) {
-        _stopRealtimeProcessing();
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) {
-            _startRealtimeProcessing();
-          }
-        });
-      }
+      // Frame change will be picked up in next processing cycle
     }
   }
 
@@ -150,36 +166,74 @@ class _RealTimeScreenState extends State<RealTimeScreen> {
       setState(() {
         _selectedSize = newSize;
       });
-
-      // Restart processing if active
-      if (_isProcessing) {
-        _stopRealtimeProcessing();
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) {
-            _startRealtimeProcessing();
-          }
-        });
-      }
-    }
-  }
-
-  Color _getStatusColor() {
-    switch (_distanceStatus) {
-      case 'optimal':
-        return Colors.green;
-      case 'too_close':
-        return Colors.orange;
-      case 'too_far':
-        return Colors.red;
-      case 'error':
-        return Colors.red;
-      default:
-        return Colors.grey;
+      // Size change will be picked up in next processing cycle
     }
   }
 
   String _getFrameDisplayName(String filename) {
     return filename.split('.').first.replaceAll('_', ' ').toUpperCase();
+  }
+
+  Widget _buildCameraPreview() {
+    final controller = _cameraService.controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: Text(
+            'Camera not ready',
+            style: TextStyle(color: Colors.white),
+          ),
+        ),
+      );
+    }
+
+    // CameraPreview handles sizing automatically
+    return SizedBox.expand(
+      child: CameraPreview(controller),
+    );
+  }
+
+  Widget _buildProcessedImage() {
+    if (_processedImage == null) {
+      return const SizedBox.shrink();
+    }
+
+    // Handle base64 data URL
+    try {
+      // Check if it's a base64 data URL
+      if (_processedImage!.startsWith('data:image')) {
+        // Extract base64 part
+        final base64String = _processedImage!.split(',')[1];
+        final imageBytes = base64Decode(base64String);
+        
+        return Image.memory(
+          imageBytes,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          gaplessPlayback: true, // Smooth transitions between frames
+        );
+      } else {
+        // Regular network image
+        return Image.network(
+          _processedImage!,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          gaplessPlayback: true,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return const SizedBox.shrink();
+          },
+          errorBuilder: (context, error, stackTrace) {
+            return const SizedBox.shrink();
+          },
+        );
+      }
+    } catch (e) {
+      return const SizedBox.shrink();
+    }
   }
 
   @override
@@ -200,16 +254,27 @@ class _RealTimeScreenState extends State<RealTimeScreen> {
         foregroundColor: Colors.white,
         actions: [
           if (_isProcessing)
-            IconButton(
-              icon: const Icon(Icons.stop),
-              onPressed: _stopRealtimeProcessing,
-              tooltip: 'Stop Processing',
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.play_arrow),
-              onPressed: _startRealtimeProcessing,
-              tooltip: 'Start Processing',
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.circle, color: Colors.green, size: 12),
+                  SizedBox(width: 6),
+                  Text(
+                    'LIVE',
+                    style: TextStyle(
+                      color: Colors.green,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
             ),
         ],
       ),
@@ -226,102 +291,44 @@ class _RealTimeScreenState extends State<RealTimeScreen> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // Camera Preview (only show when not processing)
-                  if (_isCameraInitialized && _showCameraPreview)
-                    CameraPreview(_cameraService.controller!),
+                  // Camera Preview (show when not processing)
+                  if (_isCameraInitialized && !_isProcessing && _cameraService.controller != null)
+                    _buildCameraPreview(),
 
-                  // Processed Image (only show when processing)
+                  // Processed Image (show when processing) - replaces camera preview
                   if (_processedImage != null && _isProcessing)
-                    Image.network(
-                      _processedImage!,
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                      height: double.infinity,
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return Center(
-                          child: CircularProgressIndicator(
-                            value: loadingProgress.expectedTotalBytes != null
-                                ? loadingProgress.cumulativeBytesLoaded /
-                                loadingProgress.expectedTotalBytes!
-                                : null,
-                          ),
-                        );
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        return Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.error, color: Colors.red, size: 50),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Image load error',
-                                style: TextStyle(color: Colors.red[300]),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
+                    Positioned.fill(
+                      child: _buildProcessedImage(),
                     ),
 
-                  // Status Overlay
-                  Positioned(
-                    top: 10,
-                    left: 10,
-                    right: 10,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.7),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.face, size: 16, color: Colors.white),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Face: $_faceShape',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                  // Frame Info Overlay
+                  if (_isProcessing && _selectedFrame.isNotEmpty)
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      right: 10,
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.photo, size: 16, color: Colors.white),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Frame: ${_getFrameDisplayName(_selectedFrame)}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            _distanceMessage,
-                            style: TextStyle(
-                              color: _getStatusColor(),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          if (_isProcessing) ...[
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                const Icon(Icons.photo, size: 14, color: Colors.white),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Frame: ${_getFrameDisplayName(_selectedFrame)}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
                             ),
                           ],
-                        ],
+                        ),
                       ),
                     ),
-                  ),
 
                   // Processing Indicator
                   if (_isProcessing)
@@ -355,19 +362,41 @@ class _RealTimeScreenState extends State<RealTimeScreen> {
                   if (!_isCameraInitialized)
                     Container(
                       color: Colors.black,
-                      child: const Center(
+                      child: Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            CircularProgressIndicator(color: Colors.white),
-                            SizedBox(height: 16),
+                            const CircularProgressIndicator(color: Colors.white),
+                            const SizedBox(height: 16),
                             Text(
-                              'Initializing Camera...',
-                              style: TextStyle(
+                              _cameraService.initializationError != null
+                                  ? 'Camera Error'
+                                  : 'Initializing Camera...',
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
                               ),
                             ),
+                            if (_cameraService.initializationError != null) ...[
+                              const SizedBox(height: 8),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 32),
+                                child: Text(
+                                  _cameraService.initializationError!,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.red[300],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: _initializeCamera,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Retry'),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -410,103 +439,46 @@ class _RealTimeScreenState extends State<RealTimeScreen> {
                         Expanded(
                           child: frameProvider.isLoading
                               ? const Center(child: CircularProgressIndicator())
-                              : frameProvider.frames.isEmpty
-                              ? const Center(
-                            child: Text(
-                              'No frames available',
-                              style: TextStyle(color: Colors.grey),
-                            ),
-                          )
-                              : ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: frameProvider.frames.length,
-                            itemBuilder: (context, index) {
-                              final frame = frameProvider.frames[index];
-                              return Container(
-                                width: 110,
-                                margin: const EdgeInsets.only(right: 8),
-                                child: FrameCard(
-                                  frame: frame,
-                                  isSelected: _selectedFrame == frame.filename,
-                                  onTap: () => _onFrameChanged(frame.filename),
+                              : Builder(
+                                  builder: (context) {
+                                    // Filter frames if recommended frames are provided
+                                    final framesToShow = widget.recommendedFrameFilenames != null && widget.recommendedFrameFilenames!.isNotEmpty
+                                        ? frameProvider.frames.where((frame) => widget.recommendedFrameFilenames!.contains(frame.filename)).toList()
+                                        : frameProvider.frames;
+                                    
+                                    if (framesToShow.isEmpty) {
+                                      return const Center(
+                                        child: Text(
+                                          'No frames available',
+                                          style: TextStyle(color: Colors.grey),
+                                        ),
+                                      );
+                                    }
+                                    
+                                    return ListView.builder(
+                                      scrollDirection: Axis.horizontal,
+                                      itemCount: framesToShow.length,
+                                      itemBuilder: (context, index) {
+                                        final frame = framesToShow[index];
+                                        return Container(
+                                          width: 110,
+                                          margin: const EdgeInsets.only(right: 8),
+                                          child: FrameCard(
+                                            frame: frame,
+                                            isSelected: _selectedFrame == frame.filename,
+                                            onTap: () => _onFrameChanged(frame.filename),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
                                 ),
-                              );
-                            },
-                          ),
                         ),
                       ],
                     ),
                   ),
 
-                  const SizedBox(height: 16),
-
-                  // Control Buttons
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _isProcessing ? _stopRealtimeProcessing : _startRealtimeProcessing,
-                          icon: Icon(_isProcessing ? Icons.stop : Icons.play_arrow),
-                          label: Text(_isProcessing ? 'Stop Real-time' : 'Start Real-time'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: _isProcessing ? Colors.red : Colors.green,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Status Information
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.blue[50],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.info,
-                              color: Colors.blue[700],
-                              size: 18,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              _isProcessing ? 'Live Processing' : 'Ready to Start',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue[700],
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          _isProcessing
-                              ? '• Processing at 2 FPS\n'
-                              '• Frame: ${_getFrameDisplayName(_selectedFrame)}\n'
-                              '• Size: ${frameSizes[_selectedSize]}\n'
-                              '• Face: $_faceShape\n'
-                              '• $_distanceMessage'
-                              : '1. Select a frame and size\n'
-                              '2. Click "Start Real-time"\n'
-                              '3. Position face in camera\n'
-                              '4. Move to optimal distance (40-70cm)',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
+                        const SizedBox(height: 16),
                 ],
               ),
             ),

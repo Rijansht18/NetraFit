@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'upload_screen.dart';
 import 'real_time_screen.dart';
+import 'recommendation_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -42,6 +43,25 @@ class HomeScreen extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 50),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const RecommendationScreen()),
+                  );
+                },
+                icon: const Icon(Icons.face),
+                label: const Text('Get Recommendations'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  backgroundColor: Colors.purple,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(

@@ -7,10 +7,11 @@ import '../services/image_service.dart';
 import '../services/api_service.dart';
 import '../widgets/frame_card.dart';
 import '../widgets/size_selector.dart';
-import '../widgets/recommendation_widget.dart';
 
 class UploadScreen extends StatefulWidget {
-  const UploadScreen({super.key});
+  final List<String>? recommendedFrameFilenames;
+  
+  const UploadScreen({super.key, this.recommendedFrameFilenames});
 
   @override
   State<UploadScreen> createState() => _UploadScreenState();
@@ -18,7 +19,6 @@ class UploadScreen extends StatefulWidget {
 
 class _UploadScreenState extends State<UploadScreen> {
   File? _selectedImage;
-  String? _faceShape;
   String _selectedFrame = '';
   String _selectedSize = 'medium';
   bool _isProcessing = false;
@@ -35,7 +35,23 @@ class _UploadScreenState extends State<UploadScreen> {
     super.initState();
     // Load frames when screen initializes
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<FrameProvider>(context, listen: false).loadFrames();
+      final frameProvider = Provider.of<FrameProvider>(context, listen: false);
+      frameProvider.loadFrames().then((_) {
+        // If recommended frames are provided, filter to show only those
+        if (widget.recommendedFrameFilenames != null && widget.recommendedFrameFilenames!.isNotEmpty) {
+          // Select first recommended frame
+          if (widget.recommendedFrameFilenames!.isNotEmpty) {
+            setState(() {
+              _selectedFrame = widget.recommendedFrameFilenames!.first;
+            });
+          }
+        } else if (frameProvider.frames.isNotEmpty) {
+          // Select first available frame
+          setState(() {
+            _selectedFrame = frameProvider.frames.first.filename;
+          });
+        }
+      });
     });
   }
 
@@ -45,67 +61,71 @@ class _UploadScreenState extends State<UploadScreen> {
       if (image != null) {
         setState(() {
           _selectedImage = image;
-          _faceShape = null;
           _resultImageUrl = null;
         });
+        // Auto-try frame when image is selected
+        if (_selectedFrame.isNotEmpty) {
+          _tryFrame();
+        }
       }
     } catch (e) {
       Fluttertoast.showToast(msg: 'Error picking image: $e');
     }
   }
 
-  Future<void> _analyzeFace() async {
-    if (_selectedImage == null) return;
-
-    setState(() {
-      _isProcessing = true;
-    });
-
-    final result = await ApiService.analyzeFace(_selectedImage!);
-
-    setState(() {
-      _isProcessing = false;
-    });
-
-    if (result['success'] == true) {
-      setState(() {
-        _faceShape = result['face_shape'];
-      });
-
-      // Load recommendations
-      Provider.of<FrameProvider>(context, listen: false)
-          .getRecommendations(_faceShape!);
-
-      Fluttertoast.showToast(msg: 'Face shape: ${result['face_shape']}');
-    } else {
-      Fluttertoast.showToast(msg: 'Analysis failed: ${result['error']}');
-    }
-  }
 
   Future<void> _tryFrame() async {
-    if (_selectedImage == null || _selectedFrame.isEmpty) return;
+    if (_selectedImage == null || _selectedFrame.isEmpty) {
+      print('⚠ Cannot try frame: image=${_selectedImage != null}, frame=${_selectedFrame.isNotEmpty}');
+      Fluttertoast.showToast(msg: 'Please select an image and frame first');
+      return;
+    }
+
+    print('🖼️ Trying frame: $_selectedFrame with size: $_selectedSize');
+    print('  - Selected frame: $_selectedFrame');
+    print('  - Selected size: $_selectedSize');
+    print('  - Image path: ${_selectedImage!.path}');
 
     setState(() {
       _isProcessing = true;
+      // Clear previous result when starting new processing
+      _resultImageUrl = null;
     });
 
-    final result = await ApiService.tryFrame(
-      _selectedImage!,
-      _selectedFrame,
-      _selectedSize,
-    );
+    try {
+      final result = await ApiService.tryFrame(
+        _selectedImage!,
+        _selectedFrame,
+        _selectedSize,
+      );
 
-    setState(() {
-      _isProcessing = false;
-    });
+      print('📥 API Response: success=${result['success']}');
+      if (result['success'] == true) {
+        print('✓ Frame applied successfully');
+        print('  - Result URL: ${result['result_url']}');
+      } else {
+        print('✗ Frame application failed: ${result['error']}');
+      }
 
-    if (result['success'] == true) {
       setState(() {
-        _resultImageUrl = result['result_url'];
+        _isProcessing = false;
       });
-      Fluttertoast.showToast(msg: 'Frame applied successfully!');
-    } else {
-      Fluttertoast.showToast(msg: 'Failed: ${result['error']}');
+
+      if (result['success'] == true) {
+        setState(() {
+          _resultImageUrl = result['result_url'];
+        });
+        Fluttertoast.showToast(msg: 'Frame applied successfully!');
+      } else {
+        Fluttertoast.showToast(msg: 'Failed: ${result['error']}');
+      }
+    } catch (e, stackTrace) {
+      print('✗ Error trying frame: $e');
+      print('Stack trace: $stackTrace');
+      setState(() {
+        _isProcessing = false;
+      });
+      Fluttertoast.showToast(msg: 'Error: $e');
     }
   }
 
@@ -160,45 +180,10 @@ class _UploadScreenState extends State<UploadScreen> {
                         ),
                       ],
                     ),
-                    if (_selectedImage != null) ...[
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        onPressed: _analyzeFace,
-                        icon: const Icon(Icons.face),
-                        label: const Text('Analyze Face Shape'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
             ),
-
-            const SizedBox(height: 20),
-
-            // Face Shape Result
-            if (_faceShape != null)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.face, color: Colors.blue),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Face Shape: $_faceShape',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
 
             const SizedBox(height: 20),
 
@@ -210,35 +195,27 @@ class _UploadScreenState extends State<UploadScreen> {
                 setState(() {
                   _selectedSize = size;
                 });
+                // Auto-try frame when size changes
+                if (_selectedImage != null && _selectedFrame.isNotEmpty) {
+                  _tryFrame();
+                }
               },
             ),
 
             const SizedBox(height: 20),
 
-            // Recommended Frames
-            if (_faceShape != null && frameProvider.recommendedFrames.isNotEmpty)
-              RecommendationWidget(
-                frames: frameProvider.recommendedFrames,
-                onFrameSelected: (frame) {
-                  setState(() {
-                    _selectedFrame = frame.filename;
-                  });
-                },
-                selectedFrame: _selectedFrame,
-              ),
-
-            const SizedBox(height: 20),
-
-            // All Frames
+            // Frames (Recommended or All)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'All Frames',
-                      style: TextStyle(
+                    Text(
+                      widget.recommendedFrameFilenames != null && widget.recommendedFrameFilenames!.isNotEmpty
+                          ? 'Recommended Frames'
+                          : 'All Frames',
+                      style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
@@ -249,27 +226,44 @@ class _UploadScreenState extends State<UploadScreen> {
                     else if (frameProvider.frames.isEmpty)
                       const Text('No frames available')
                     else
-                      GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                          childAspectRatio: 0.8,
-                        ),
-                        itemCount: frameProvider.frames.length,
-                        itemBuilder: (context, index) {
-                          final frame = frameProvider.frames[index];
-                          return FrameCard(
-                            frame: frame,
-                            isSelected: _selectedFrame == frame.filename,
-                            onTap: () {
-                              setState(() {
-                                _selectedFrame = frame.filename;
-                                _resultImageUrl = null; // Clear previous result when changing frame
-                              });
-                              print('Selected frame: ${frame.filename}');
+                      Builder(
+                        builder: (context) {
+                          // Filter frames if recommended frames are provided
+                          final framesToShow = widget.recommendedFrameFilenames != null && widget.recommendedFrameFilenames!.isNotEmpty
+                              ? frameProvider.frames.where((frame) => widget.recommendedFrameFilenames!.contains(frame.filename)).toList()
+                              : frameProvider.frames;
+                          
+                          if (framesToShow.isEmpty) {
+                            return const Text('No frames available');
+                          }
+                          
+                          return GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 10,
+                              mainAxisSpacing: 10,
+                              childAspectRatio: 0.8,
+                            ),
+                            itemCount: framesToShow.length,
+                            itemBuilder: (context, index) {
+                              final frame = framesToShow[index];
+                              return FrameCard(
+                                frame: frame,
+                                isSelected: _selectedFrame == frame.filename,
+                                onTap: () {
+                                  print('🖼️ Frame selected: ${frame.filename}');
+                                  setState(() {
+                                    _selectedFrame = frame.filename;
+                                    _resultImageUrl = null;
+                                  });
+                                  // Auto-try frame when selected
+                                  if (_selectedImage != null) {
+                                    _tryFrame();
+                                  }
+                                },
+                              );
                             },
                           );
                         },
@@ -278,24 +272,6 @@ class _UploadScreenState extends State<UploadScreen> {
                 ),
               ),
             ),
-
-            const SizedBox(height: 20),
-
-            // Try Frame Button
-            if (_selectedImage != null && _selectedFrame.isNotEmpty)
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _tryFrame,
-                  icon: const Icon(Icons.visibility),
-                  label: const Text('Try This Frame'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ),
 
             const SizedBox(height: 20),
 

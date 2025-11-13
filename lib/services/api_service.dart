@@ -73,6 +73,11 @@ class ApiService {
       String size
       ) async {
     try {
+      print('📤 API: Sending try_frame request');
+      print('  - Frame: $frameFilename');
+      print('  - Size: $size');
+      print('  - Image: ${imageFile.path}');
+      
       var request = http.MultipartRequest(
         'POST',
         Uri.parse('$baseUrl/api/try_frame'),
@@ -88,23 +93,35 @@ class ApiService {
       request.fields['frame'] = frameFilename;
       request.fields['size'] = size;
 
+      print('📤 API: Request fields:');
+      print('  - frame: ${request.fields['frame']}');
+      print('  - size: ${request.fields['size']}');
+      print('  - files: ${request.files.length}');
+
       var response = await request.send();
       final responseData = await response.stream.bytesToString();
       final data = json.decode(responseData);
 
+      print('📥 API: Response status: ${response.statusCode}');
+      print('📥 API: Response data: ${json.encode(data)}');
+
       if (response.statusCode == 200 && data['success'] == true) {
+        print('✓ API: Frame applied successfully');
         return {
           'success': true,
           'result_url': data['result_url'],
           'message': data['message'],
         };
       } else {
+        print('✗ API: Frame application failed');
         return {
           'success': false,
           'error': data['error'] ?? 'Frame application failed',
         };
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('✗ API: Network error: $e');
+      print('Stack trace: $stackTrace');
       return {
         'success': false,
         'error': 'Network error: $e',
