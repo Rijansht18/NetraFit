@@ -1,3 +1,4 @@
+
 from flask import Flask, request, render_template, Response, url_for, send_from_directory, jsonify
 from flask_cors import CORS  # Add this import
 import cv2
@@ -369,15 +370,15 @@ def api_analyze_face():
     if file.filename == '' or not allowed_file(file.filename):
         return jsonify({'success': False, 'error': 'Invalid file'})
     
-    # Save uploaded file
-    filename = secure_filename(file.filename)
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(file_path)
-    
-    # Process image
-    img = cv2.imread(file_path)
-    if img is None:
-        return jsonify({'success': False, 'error': 'Could not process image'})
+    # Read uploaded file bytes (process in-memory)
+    try:
+        file_bytes = file.read()
+        nparr = np.frombuffer(file_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return jsonify({'success': False, 'error': 'Could not decode image'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Could not read uploaded image: {e}'})
     
     # Face detection and analysis
     with mp_face_mesh.FaceMesh(
@@ -434,12 +435,18 @@ def api_try_frame():
         print("✗ API: Invalid file")
         return jsonify({'success': False, 'error': 'Invalid file'})
     
-    # Save uploaded file
-    filename = secure_filename(file.filename)
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(file_path)
-    print(f"✓ API: File saved to: {file_path}")
-    
+    # Read uploaded file bytes (process in-memory)
+    try:
+        file_bytes = file.read()
+        nparr = np.frombuffer(file_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return jsonify({'success': False, 'error': 'Could not decode uploaded image'})
+        filename = secure_filename(file.filename)
+        print(f"✓ API: Received file (in-memory): {filename}")
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Could not read uploaded image: {e}'})
+
     # Load selected frame
     frame_path = os.path.join(app.config['FRAMES_FOLDER'], frame_filename)
     print(f"📥 API: Loading frame from: {frame_path}")
@@ -455,10 +462,7 @@ def api_try_frame():
         print(f"✗ API: Error loading frame: {str(e)}")
         return jsonify({'success': False, 'error': f'Error loading frame: {str(e)}'})
     
-    # Process image
-    img = cv2.imread(file_path)
-    if img is None:
-        return jsonify({'success': False, 'error': 'Could not process image'})
+    # 'img' already contains the decoded uploaded image (in-memory)
     
     # Face detection
     with mp_face_mesh.FaceMesh(
@@ -488,21 +492,16 @@ def api_try_frame():
                 img.copy(), landmarks_array, selected_glasses, 
                 scale_factor=scale_factor
             )
-            print(f"✓ API: Frame overlay successful")
-            
-            # Save result with timestamp to avoid caching issues
-            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')
-            result_filename = f'result_{timestamp}_{frame_filename}_{filename}'
-            result_path = os.path.join(app.config['UPLOAD_FOLDER'], result_filename)
-            cv2.imwrite(result_path, overlayed_img)
-            print(f"✓ API: Result saved to: {result_filename}")
-            
-            result_url = url_for('uploaded_file', filename=result_filename, _external=True)
-            print(f"✓ API: Result URL: {result_url}")
-            
+            print(f"✓ API: Frame overlay successful (in-memory)")
+
+            # Encode overlayed image to base64 and return as data URI
+            _, buffer = cv2.imencode('.jpg', overlayed_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            encoded_image = base64.b64encode(buffer).decode('utf-8')
+            data_uri = f"data:image/jpeg;base64,{encoded_image}"
+
             return jsonify({
                 'success': True,
-                'result_url': result_url,
+                'processed_image': data_uri,
                 'message': 'Frame applied successfully'
             })
         except Exception as e:
@@ -699,9 +698,22 @@ def upload_file():
             if file.filename == '' or not allowed_file(file.filename):
                 error = "Invalid file"
             else:
-                filename = secure_filename(file.filename)
-                file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(file_path)
+                # Read uploaded file into memory (do not save)
+                try:
+                    file_bytes = file.read()
+                    nparr = np.frombuffer(file_bytes, np.uint8)
+                    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    if img is None:
+                        error = "Could not decode the uploaded image"
+                        return render_template('upload.html', face_shape=face_shape, file_url=file_url, 
+                                             error=error, frames=frames, selected_frame=selected_frame,
+                                             frame_sizes=FRAME_SIZES, selected_size=selected_size)
+                    filename = secure_filename(file.filename)
+                except Exception as e:
+                    error = f"Could not read uploaded image: {e}"
+                    return render_template('upload.html', face_shape=face_shape, file_url=file_url, 
+                                         error=error, frames=frames, selected_frame=selected_frame,
+                                         frame_sizes=FRAME_SIZES, selected_size=selected_size)
 
                 # Load selected glasses
                 selected_frame_path = os.path.join(app.config['FRAMES_FOLDER'], selected_frame)
@@ -713,8 +725,9 @@ def upload_file():
                                          error=error, frames=frames, selected_frame=selected_frame,
                                          frame_sizes=FRAME_SIZES, selected_size=selected_size)
 
-                img = cv2.imread(file_path)
-                if img is None:
+                # 'img' already contains the decoded uploaded image (in-memory)
+                # ensure it's present
+                if 'img' not in locals() or img is None:
                     error = "Could not read the uploaded image"
                     return render_template('upload.html', face_shape=face_shape, file_url=file_url, 
                                          error=error, frames=frames, selected_frame=selected_frame,
@@ -756,9 +769,10 @@ def upload_file():
                                 img.copy(), landmarks_array, selected_glasses, 
                                 scale_factor=scale_factor
                             )
-                            overlay_file = os.path.join(app.config['UPLOAD_FOLDER'], 'overlay_' + filename)
-                            cv2.imwrite(overlay_file, overlayed_img)
-                            file_url = url_for('uploaded_file', filename='overlay_' + filename)
+                            # Encode overlay to base64 data URI for immediate display (no disk write)
+                            _, buffer = cv2.imencode('.jpg', overlayed_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                            encoded_image = base64.b64encode(buffer).decode('utf-8')
+                            file_url = f"data:image/jpeg;base64,{encoded_image}"
                         else:
                             error = "Face shape model not available"
                     else:

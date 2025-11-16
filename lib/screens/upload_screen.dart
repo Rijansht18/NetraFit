@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 import '../providers/frame_provider.dart';
 import '../services/image_service.dart';
 import '../services/api_service.dart';
@@ -23,6 +25,7 @@ class _UploadScreenState extends State<UploadScreen> {
   String _selectedSize = 'medium';
   bool _isProcessing = false;
   String? _resultImageUrl;
+  Uint8List? _resultImageBytes;
 
   final Map<String, String> frameSizes = {
     'small': 'Small',
@@ -100,25 +103,36 @@ class _UploadScreenState extends State<UploadScreen> {
       );
 
       print('📥 API Response: success=${result['success']}');
-      if (result['success'] == true) {
-        print('✓ Frame applied successfully');
-        print('  - Result URL: ${result['result_url']}');
-      } else {
-        print('✗ Frame application failed: ${result['error']}');
-      }
 
       setState(() {
         _isProcessing = false;
       });
 
-      if (result['success'] == true) {
         setState(() {
-          _resultImageUrl = result['result_url'];
+          _isProcessing = false;
         });
-        Fluttertoast.showToast(msg: 'Frame applied successfully!');
-      } else {
-        Fluttertoast.showToast(msg: 'Failed: ${result['error']}');
-      }
+
+        if (result['success'] == true) {
+          // If server returned processed_image (data URI), use it in-memory
+          if (result.containsKey('processed_image')) {
+            final dataUri = result['processed_image'] as String;
+            // Data URI format: data:image/jpeg;base64,....
+            final base64Str = dataUri.split(',').length > 1 ? dataUri.split(',')[1] : dataUri;
+            setState(() {
+              _resultImageBytes = base64Decode(base64Str);
+              _resultImageUrl = null;
+            });
+          } else if (result.containsKey('result_url')) {
+            setState(() {
+              _resultImageUrl = result['result_url'];
+              _resultImageBytes = null;
+            });
+          }
+
+          Fluttertoast.showToast(msg: 'Frame applied successfully!');
+        } else {
+          Fluttertoast.showToast(msg: 'Failed: ${result['error']}');
+        }
     } catch (e, stackTrace) {
       print('✗ Error trying frame: $e');
       print('Stack trace: $stackTrace');
@@ -275,8 +289,31 @@ class _UploadScreenState extends State<UploadScreen> {
 
             const SizedBox(height: 20),
 
-            // Result Image
-            if (_resultImageUrl != null)
+            // Result Image (either from URL or in-memory bytes)
+            if (_resultImageBytes != null)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'Result',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Image.memory(
+                        _resultImageBytes!,
+                        height: 300,
+                        fit: BoxFit.cover,
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (_resultImageUrl != null)
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),

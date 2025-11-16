@@ -83,10 +83,13 @@ class ApiService {
         Uri.parse('$baseUrl/api/try_frame'),
       );
 
+      // Read image bytes and send as part file in-memory (avoid relying on saved paths)
+      final bytes = await imageFile.readAsBytes();
       request.files.add(
-        await http.MultipartFile.fromPath(
+        http.MultipartFile.fromBytes(
           'file',
-          imageFile.path,
+          bytes,
+          filename: imageFile.path.split(Platform.pathSeparator).last,
         ),
       );
 
@@ -107,6 +110,15 @@ class ApiService {
 
       if (response.statusCode == 200 && data['success'] == true) {
         print('✓ API: Frame applied successfully');
+        // Prefer processed_image (base64 data URI) when provided
+        if (data.containsKey('processed_image')) {
+          return {
+            'success': true,
+            'processed_image': data['processed_image'],
+            'message': data['message'],
+          };
+        }
+        // Fallback to result_url for older server behavior
         return {
           'success': true,
           'result_url': data['result_url'],
