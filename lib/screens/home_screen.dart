@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'upload_screen.dart';
-import 'real_time_screen.dart';
+import 'main_try_on_screen.dart'; // Update this import
 import 'recommendation_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -43,6 +42,27 @@ class HomeScreen extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 50),
+            // Try On Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const MainTryOnScreen()), // Updated
+                  );
+                },
+                icon: const Icon(Icons.camera),
+                label: const Text('Try On'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Recommendation Button
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -52,49 +72,11 @@ class HomeScreen extends StatelessWidget {
                     MaterialPageRoute(builder: (context) => const RecommendationScreen()),
                   );
                 },
-                icon: const Icon(Icons.face),
-                label: const Text('Get Recommendations'),
+                icon: const Icon(Icons.recommend),
+                label: const Text('Recommendation'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 15),
                   backgroundColor: Colors.purple,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const UploadScreen()),
-                  );
-                },
-                icon: const Icon(Icons.upload),
-                label: const Text('Upload Photo'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const RealTimeScreen()),
-                  );
-                },
-                icon: const Icon(Icons.camera),
-                label: const Text('Real-time Try-On'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                  backgroundColor: Colors.green,
                   foregroundColor: Colors.white,
                 ),
               ),

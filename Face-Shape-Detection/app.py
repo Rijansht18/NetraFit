@@ -809,15 +809,15 @@ def get_face_shape_recommendations():
 def change_frame():
     """API endpoint to change the current glasses frame"""
     global current_glasses, current_frame_size
-    
+
     frame_filename = request.json.get('frame')
     size_key = request.json.get('size', 'medium')
-    
+
     if not frame_filename:
         return jsonify({'success': False, 'error': 'No frame specified'})
-    
+
     frame_path = os.path.join(app.config['FRAMES_FOLDER'], frame_filename)
-    
+
     try:
         current_glasses = load_glasses(frame_path)
         current_frame_size = size_key
@@ -850,7 +850,7 @@ def generate_frames():
     if not cap.isOpened():
         print("Error: Could not open camera")
         return
-    
+
     # Initialize MediaPipe Face Mesh for real-time
     face_mesh = mp_face_mesh.FaceMesh(
         static_image_mode=False,
@@ -859,9 +859,6 @@ def generate_frames():
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5
     )
-    
-    analyzer = FaceShapeAnalyzer(analysis_duration=3.0, stability_threshold=0.8)
-    distance_history = []
 
     while True:
         ret, frame = cap.read()
@@ -871,110 +868,38 @@ def generate_frames():
 
         # Flip frame horizontally for mirror effect
         frame = cv2.flip(frame, 1)
-        
+
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = face_mesh.process(rgb_frame)
 
         display_frame = frame.copy()
-        
+
         if results.multi_face_landmarks:
             landmarks = results.multi_face_landmarks[0].landmark
-            
-            # Convert landmarks to array format for distance estimation
+
+            # Convert landmarks to array format
             landmarks_array = []
             for lm in landmarks:
                 landmarks_array.append([lm.x, lm.y, lm.z])
             landmarks_array = np.array(landmarks_array)
-            
-            # Estimate distance from camera
-            distance = estimate_distance(landmarks_array)
-            distance_history.append(distance)
-            if len(distance_history) > 10:
-                distance_history.pop(0)
-            avg_distance = np.mean(distance_history)
-            
-            # Get distance status
-            distance_status, distance_message = get_distance_status(avg_distance)
-            
-            # Calculate face shape
-            current_shape = "Unknown"
-            if face_shape_model is not None:
-                try:
-                    features = calculate_face_features(landmarks)
-                    label = face_shape_model.predict([features])[0]
-                    current_shape = get_face_shape_label(label)
-                except Exception as e:
-                    print(f"Prediction error: {e}")
-                    current_shape = "Unknown"
 
-            # Display information
-            if distance_status == "optimal":
-                color = (0, 255, 0)  # Green
-            elif distance_status == "too_close":
-                color = (0, 165, 255)  # Orange
-            else:  # too_far
-                color = (0, 0, 255)  # Red
-                
-            cv2.putText(display_frame, distance_message, (20, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-            
-            # Face shape analysis logic
-            if not analyzer.analysis_complete:
-                if distance_status == "optimal" and 45 <= avg_distance <= 55:
-                    # Start analysis if not already started
-                    if analyzer.analysis_start_time is None:
-                        analyzer.start_analysis()
-                    
-                    # Update analysis
-                    remaining = analyzer.update_analysis(current_shape, distance_status)
-                    
-                    if remaining > 0:
-                        progress, _ = analyzer.get_analysis_progress()
-                        cv2.putText(display_frame, f"Analyzing: {current_shape}", (20, 60),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-                        cv2.putText(display_frame, f"Progress: {progress:.0f}%", (20, 90),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-                        cv2.putText(display_frame, f"Time left: {remaining:.1f}s", (20, 120),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-                else:
-                    cv2.putText(display_frame, "Move to 45-55cm for analysis", (20, 60),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-                    analyzer.reset()
-            else:
-                # Analysis complete - show final result
-                final_shape = analyzer.final_shape
-                cv2.putText(display_frame, f"Final Shape: {final_shape}", (20, 60),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                cv2.putText(display_frame, "Click 'Get Recommendations'", (20, 90),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-
-            # Always show current shape for reference
-            cv2.putText(display_frame, f"Current: {current_shape}", (20, 150),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-
-            # Overlay glasses
+            # Overlay glasses - NO TEXT, JUST THE GLASSES
             global current_glasses, current_frame_size
             if current_glasses is not None:
                 scale_factor = FRAME_SIZES.get(current_frame_size, FRAME_SIZES['medium'])['scale_factor']
                 try:
                     display_frame = overlay_glasses_with_handles(
-                        display_frame, landmarks_array, current_glasses, 
+                        display_frame, landmarks_array, current_glasses,
                         scale_factor=scale_factor, debug=False
                     )
                 except Exception as e:
                     print(f"Overlay error: {e}")
 
-        else:
-            # No face detected
-            cv2.putText(display_frame, "No Face Detected", (20, 50),
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            analyzer.reset()
-
-        # Convert to JPEG for streaming
+        # Convert to JPEG for streaming - NO TEXT ADDED
         ret, buffer = cv2.imencode('.jpg', display_frame)
         if not ret:
             continue
-            
+
         frame_bytes = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
