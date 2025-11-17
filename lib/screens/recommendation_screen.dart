@@ -107,8 +107,8 @@ class _RecommendationScreenState extends State<RecommendationScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => isRealtime
-            ? TryOnScreen(recommendedFrameFilenames: recommendedFrameFilenames)
-            : UploadScreen(recommendedFrameFilenames: recommendedFrameFilenames),
+            ? TryOnScreen(recommendedFrameFilenames: recommendedFrameFilenames, showHeader: true,)
+            : UploadScreen(recommendedFrameFilenames: recommendedFrameFilenames, showHeader: true,),
       ),
     );
   }

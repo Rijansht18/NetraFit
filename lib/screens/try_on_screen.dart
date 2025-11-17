@@ -3,12 +3,12 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:provider/provider.dart';
 import '../providers/frame_provider.dart';
 import '../widgets/frame_card.dart';
-import '../widgets/size_selector.dart';
 
 class TryOnScreen extends StatefulWidget {
   final List<String>? recommendedFrameFilenames;
+  final bool showHeader; // Add this parameter
 
-  const TryOnScreen({super.key, this.recommendedFrameFilenames});
+  const TryOnScreen({super.key, this.recommendedFrameFilenames, this.showHeader = false});
 
   @override
   State<TryOnScreen> createState() => _TryOnScreenState();
@@ -17,17 +17,11 @@ class TryOnScreen extends StatefulWidget {
 class _TryOnScreenState extends State<TryOnScreen> {
   late WebViewController _webViewController;
   String _selectedFrame = '';
-  String _selectedSize = 'medium';
+  double _sizeValue = 1.0; // 0.8=small, 1.0=medium, 1.2=large
   bool _isLoading = true;
   bool _hasError = false;
   bool _isPageLoaded = false;
   bool _framesLoaded = false;
-
-  final Map<String, String> frameSizes = {
-    'small': 'Small',
-    'medium': 'Medium',
-    'large': 'Large',
-  };
 
   @override
   void initState() {
@@ -94,7 +88,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
               _isPageLoaded = true;
             });
             print('Page loaded: $url');
-            // Inject CSS to hide controls and show only camera
             _hideWebControls();
           },
           onWebResourceError: (WebResourceError error) {
@@ -110,14 +103,8 @@ class _TryOnScreenState extends State<TryOnScreen> {
   }
 
   void _hideWebControls() {
-    // Since your Flask app uses /video_feed which returns an image stream,
-    // let's target the image element specifically
     final targetedJS = """
-    // Targeted approach for Flask video_feed
     function setupCleanCameraView() {
-      console.log('Setting up clean camera view for Flask...');
-      
-      // Clean up body
       document.body.style.margin = '0';
       document.body.style.padding = '0';
       document.body.style.overflow = 'hidden';
@@ -125,10 +112,7 @@ class _TryOnScreenState extends State<TryOnScreen> {
       document.body.style.width = '100vw';
       document.body.style.height = '100vh';
       
-      // Look for the camera image (from /video_feed)
       let cameraImg = null;
-      
-      // Method 1: Look for img tags that might be the camera
       const allImages = document.querySelectorAll('img');
       for (let img of allImages) {
         const src = img.src || '';
@@ -139,11 +123,9 @@ class _TryOnScreenState extends State<TryOnScreen> {
         }
       }
       
-      // Method 2: If no specific image found, take the largest visible image
       if (!cameraImg) {
         let largestImg = null;
         let maxArea = 0;
-        
         allImages.forEach(img => {
           const rect = img.getBoundingClientRect();
           const area = rect.width * rect.height;
@@ -152,17 +134,12 @@ class _TryOnScreenState extends State<TryOnScreen> {
             largestImg = img;
           }
         });
-        
         cameraImg = largestImg;
       }
       
       if (cameraImg) {
-        console.log('Found camera image:', cameraImg.src);
-        
-        // Hide all other elements except the camera image and its parents
         const hideElement = (el) => {
           if (el === cameraImg || el.contains(cameraImg)) {
-            // This is the camera or its container, don't hide but clean up
             el.style.margin = '0';
             el.style.padding = '0';
             el.style.background = 'transparent';
@@ -170,15 +147,12 @@ class _TryOnScreenState extends State<TryOnScreen> {
             el.style.width = '100%';
             el.style.height = '100%';
           } else {
-            // Hide other elements
             el.style.display = 'none';
           }
         };
         
-        // Hide all children of body
         Array.from(document.body.children).forEach(hideElement);
         
-        // Make camera image full screen
         cameraImg.style.position = 'fixed';
         cameraImg.style.top = '0';
         cameraImg.style.left = '0';
@@ -186,24 +160,21 @@ class _TryOnScreenState extends State<TryOnScreen> {
         cameraImg.style.height = '100%';
         cameraImg.style.objectFit = 'cover';
         cameraImg.style.zIndex = '9999';
-        
-      } else {
-        console.log('No camera image found. Page structure:');
-        console.log('Body children:', document.body.children.length);
-        Array.from(document.body.children).forEach((child, i) => {
-          console.log('Child ' + i + ':', child.tagName, child.id, child.className);
-        });
       }
     }
     
     setupCleanCameraView();
-    
-    // Keep trying as page loads
     const interval = setInterval(setupCleanCameraView, 500);
     setTimeout(() => clearInterval(interval), 5000);
   """;
 
     _webViewController.runJavaScript(targetedJS);
+  }
+
+  String _getSizeKey() {
+    if (_sizeValue <= 0.9) return 'small';
+    if (_sizeValue <= 1.1) return 'medium';
+    return 'large';
   }
 
   void _changeFrame(String frameFilename) {
@@ -219,7 +190,7 @@ class _TryOnScreenState extends State<TryOnScreen> {
         },
         body: JSON.stringify({
           frame: '$frameFilename',
-          size: '$_selectedSize'
+          size: '${_getSizeKey()}'
         })
       }).then(response => {
         console.log('Frame changed to: $frameFilename');
@@ -231,9 +202,9 @@ class _TryOnScreenState extends State<TryOnScreen> {
     _webViewController.runJavaScript(javascript);
   }
 
-  void _changeSize(String size) {
+  void _changeSize(double newSize) {
     setState(() {
-      _selectedSize = size;
+      _sizeValue = newSize;
     });
 
     final javascript = """
@@ -244,10 +215,10 @@ class _TryOnScreenState extends State<TryOnScreen> {
         },
         body: JSON.stringify({
           frame: '$_selectedFrame',
-          size: '$size'
+          size: '${_getSizeKey()}'
         })
       }).then(response => {
-        console.log('Size changed to: $size');
+        console.log('Size changed to: ${_getSizeKey()}');
       }).catch(error => {
         console.log('Size change error:', error);
       });
@@ -257,7 +228,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
   }
 
   void _refreshCameraView() {
-    // Refresh the page to ensure clean camera view
     _webViewController.reload();
   }
 
@@ -271,12 +241,13 @@ class _TryOnScreenState extends State<TryOnScreen> {
             const SizedBox(height: 16),
             const Text(
               'Connection Failed',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
             ),
             const SizedBox(height: 8),
             const Text(
               'Make sure Flask server is running\nat 192.168.1.80:5000',
               textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white),
             ),
             const SizedBox(height: 16),
             ElevatedButton(
@@ -310,7 +281,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
             ),
           ),
 
-        // Refresh button - only show when page is loaded
         if (_isPageLoaded && !_isLoading)
           Positioned(
             top: 10,
@@ -331,11 +301,44 @@ class _TryOnScreenState extends State<TryOnScreen> {
     );
   }
 
+  Widget _buildSizeSlider() {
+    return Container(
+      width: 60,
+      height: 200,
+      child: Column(
+        children: [
+          // Vertical Slider
+          Expanded(
+            child: RotatedBox(
+              quarterTurns: 3, // Make it vertical
+              child: Slider(
+                value: _sizeValue,
+                min: 0.8,
+                max: 1.2,
+                divisions: 4,
+                onChanged: _changeSize,
+                activeColor: Colors.blue,
+                inactiveColor: Colors.grey,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final frameProvider = Provider.of<FrameProvider>(context);
 
     return Scaffold(
+      appBar: widget.showHeader
+          ? AppBar(
+        title: const Text('AR Try On'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+      )
+          : null,
       body: Column(
         children: [
           // Camera View Section
@@ -343,52 +346,43 @@ class _TryOnScreenState extends State<TryOnScreen> {
             flex: 3,
             child: Container(
               color: Colors.black,
-              child: _buildWebViewContent(),
+              child: Stack(
+                children: [
+                  _buildWebViewContent(),
+                  // Simple Size Slider on right side
+                  Positioned(
+                    right: 1,
+                    top: MediaQuery.of(context).size.height * 0.25,
+                    child: _buildSizeSlider(),
+                  ),
+                ],
+              ),
             ),
           ),
 
-          // Flutter Controls Section
+          // Frame Selection Section
           Expanded(
             flex: 2,
             child: Container(
               color: Colors.white,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    // Size Selector
-                    SizeSelector(
-                      sizes: frameSizes,
-                      selectedSize: _selectedSize,
-                      onSizeSelected: _changeSize,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Frame Selection
-                    Container(
-                      height: 140,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Select Frame:',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Expanded(
-                            child: !_framesLoaded || frameProvider.isLoading
-                                ? const Center(child: CircularProgressIndicator())
-                                : _buildFrameList(frameProvider),
-                          ),
-                        ],
+              child: Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text(
+                      'Select Frame',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  Expanded(
+                    child: !_framesLoaded || frameProvider.isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _buildFrameList(frameProvider),
+                  ),
+                ],
               ),
             ),
           ),
@@ -419,8 +413,8 @@ class _TryOnScreenState extends State<TryOnScreen> {
       itemBuilder: (context, index) {
         final frame = framesToShow[index];
         return Container(
-          width: 110,
-          margin: const EdgeInsets.only(right: 8),
+          width: 120,
+          margin: const EdgeInsets.symmetric(horizontal: 8),
           child: FrameCard(
             frame: frame,
             isSelected: _selectedFrame == frame.filename,
@@ -434,7 +428,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Ensure frames are loaded when dependencies change (like when coming back from another screen)
     if (!_framesLoaded) {
       _loadFrames();
     }

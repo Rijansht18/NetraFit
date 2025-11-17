@@ -8,12 +8,12 @@ import '../providers/frame_provider.dart';
 import '../services/image_service.dart';
 import '../services/api_service.dart';
 import '../widgets/frame_card.dart';
-import '../widgets/size_selector.dart';
 
 class UploadScreen extends StatefulWidget {
   final List<String>? recommendedFrameFilenames;
+  final bool showHeader; // Add this parameter
 
-  const UploadScreen({super.key, this.recommendedFrameFilenames});
+  const UploadScreen({super.key, this.recommendedFrameFilenames, this.showHeader = false});
 
   @override
   State<UploadScreen> createState() => _UploadScreenState();
@@ -22,15 +22,9 @@ class UploadScreen extends StatefulWidget {
 class _UploadScreenState extends State<UploadScreen> {
   File? _selectedImage;
   String _selectedFrame = '';
-  String _selectedSize = 'medium';
+  double _sizeValue = 1.0; // 0.8=small, 1.0=medium, 1.2=large
   bool _isProcessing = false;
   Uint8List? _resultImageBytes;
-
-  final Map<String, String> frameSizes = {
-    'small': 'Small',
-    'medium': 'Medium',
-    'large': 'Large',
-  };
 
   @override
   void initState() {
@@ -50,6 +44,12 @@ class _UploadScreenState extends State<UploadScreen> {
         }
       });
     });
+  }
+
+  String _getSizeKey() {
+    if (_sizeValue <= 0.9) return 'small';
+    if (_sizeValue <= 1.1) return 'medium';
+    return 'large';
   }
 
   Future<void> _pickImage() async {
@@ -97,7 +97,7 @@ class _UploadScreenState extends State<UploadScreen> {
       final result = await ApiService.tryFrame(
         _selectedImage!,
         _selectedFrame,
-        _selectedSize,
+        _getSizeKey(),
       );
 
       setState(() {
@@ -126,19 +126,69 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
+  Widget _buildSizeSlider() {
+    return Container(
+      width: 60,
+      height: 200,
+      child: Column(
+        children: [
+          // Vertical Slider
+          Expanded(
+            child: RotatedBox(
+              quarterTurns: 3, // Make it vertical
+              child: Slider(
+                value: _sizeValue,
+                min: 0.8,
+                max: 1.2,
+                divisions: 4,
+                onChanged: (value) {
+                  setState(() {
+                    _sizeValue = value;
+                  });
+                },
+                onChangeEnd: (value) {
+                  if (_selectedImage != null && _selectedFrame.isNotEmpty) {
+                    _tryFrame();
+                  }
+                },
+                activeColor: Colors.blue,
+                inactiveColor: Colors.grey,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildImageSection() {
     if (_isProcessing) {
-      return const Expanded(
+      return Expanded(
         flex: 3,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Applying frame...'),
-            ],
-          ),
+        child: Stack(
+          children: [
+            Container(
+              color: Colors.black,
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 16),
+                    Text(
+                      'Applying frame...',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              right: 1,
+              top: MediaQuery.of(context).size.height * 0.25,
+              child: _buildSizeSlider(),
+            ),
+          ],
         ),
       );
     }
@@ -146,78 +196,72 @@ class _UploadScreenState extends State<UploadScreen> {
     if (_resultImageBytes != null) {
       return Expanded(
         flex: 3,
-        child: Card(
-          margin: const EdgeInsets.all(16),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                const Text(
-                  'Result',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+        child: Stack(
+          children: [
+            Container(
+              color: Colors.black,
+              child: Center(
+                child: Image.memory(
+                  _resultImageBytes!,
+                  fit: BoxFit.contain,
                 ),
-                const SizedBox(height: 10),
-                Expanded(
-                  child: Image.memory(
-                    _resultImageBytes!,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+            Positioned(
+              right: 1,
+              top: MediaQuery.of(context).size.height * 0.25,
+              child: _buildSizeSlider(),
+            ),
+          ],
         ),
       );
     }
 
     return Expanded(
       flex: 3,
-      child: Card(
-        margin: const EdgeInsets.all(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.photo_camera,
-                size: 80,
-                color: Colors.grey[300],
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'No photo selected',
-                style: TextStyle(
-                  fontSize: 18,
-                  color: Colors.grey,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
+      child: Stack(
+        children: [
+          Container(
+            color: Colors.black,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _takePhoto,
-                      icon: const Icon(Icons.camera_alt),
-                      label: const Text('Take Photo'),
+                  Icon(
+                    Icons.photo_camera,
+                    size: 80,
+                    color: Colors.grey[300],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No photo selected',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey,
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _pickImage,
-                      icon: const Icon(Icons.photo_library),
-                      label: const Text('Choose from Gallery'),
-                    ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _takePhoto,
+                        icon: const Icon(Icons.camera_alt),
+                        label: const Text('Take Photo'),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton.icon(
+                        onPressed: _pickImage,
+                        icon: const Icon(Icons.photo_library),
+                        label: const Text('Choose from Gallery'),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -226,106 +270,91 @@ class _UploadScreenState extends State<UploadScreen> {
   Widget build(BuildContext context) {
     final frameProvider = Provider.of<FrameProvider>(context);
 
-    return Column(
-      children: [
-        // Image/Result Section
-        _buildImageSection(),
+    return Scaffold(
+      appBar: widget.showHeader
+          ? AppBar(
+        title: const Text('Upload Photo'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+      )
+          : null,
+      body: Column(
+        children: [
+          // Image/Result Section
+          _buildImageSection(),
 
-        // Controls Section
-        Expanded(
-          flex: 2,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                // Size Selector
-                SizeSelector(
-                  sizes: frameSizes,
-                  selectedSize: _selectedSize,
-                  onSizeSelected: (size) {
-                    setState(() {
-                      _selectedSize = size;
-                    });
-                    if (_selectedImage != null && _selectedFrame.isNotEmpty) {
-                      _tryFrame();
-                    }
-                  },
-                ),
-
-                const SizedBox(height: 16),
-
-                // Frame Selection
-                Container(
-                  height: 140,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.recommendedFrameFilenames != null &&
-                            widget.recommendedFrameFilenames!.isNotEmpty
-                            ? 'Recommended Frames'
-                            : 'All Frames',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
+          // Frame Selection Section
+          Expanded(
+            flex: 2,
+            child: Container(
+              color: Colors.white,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(
+                      widget.recommendedFrameFilenames != null &&
+                          widget.recommendedFrameFilenames!.isNotEmpty
+                          ? 'Recommended Frames'
+                          : 'All Frames',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: frameProvider.isLoading
-                            ? const Center(child: CircularProgressIndicator())
-                            : Builder(
-                          builder: (context) {
-                            final framesToShow =
-                            widget.recommendedFrameFilenames != null &&
-                                widget.recommendedFrameFilenames!.isNotEmpty
-                                ? frameProvider.frames.where((frame) =>
-                                widget.recommendedFrameFilenames!.contains(frame.filename)).toList()
-                                : frameProvider.frames;
-
-                            if (framesToShow.isEmpty) {
-                              return const Center(
-                                child: Text(
-                                  'No frames available',
-                                  style: TextStyle(color: Colors.grey),
-                                ),
-                              );
-                            }
-
-                            return ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: framesToShow.length,
-                              itemBuilder: (context, index) {
-                                final frame = framesToShow[index];
-                                return Container(
-                                  width: 110,
-                                  margin: const EdgeInsets.only(right: 8),
-                                  child: FrameCard(
-                                    frame: frame,
-                                    isSelected: _selectedFrame == frame.filename,
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedFrame = frame.filename;
-                                      });
-                                      if (_selectedImage != null) {
-                                        _tryFrame();
-                                      }
-                                    },
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                  Expanded(
+                    child: frameProvider.isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _buildFrameList(frameProvider),
+                  ),
+                ],
+              ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFrameList(FrameProvider frameProvider) {
+    final framesToShow = widget.recommendedFrameFilenames != null &&
+        widget.recommendedFrameFilenames!.isNotEmpty
+        ? frameProvider.frames.where((frame) =>
+        widget.recommendedFrameFilenames!.contains(frame.filename)).toList()
+        : frameProvider.frames;
+
+    if (framesToShow.isEmpty) {
+      return const Center(
+        child: Text(
+          'No frames available',
+          style: TextStyle(color: Colors.grey),
         ),
-      ],
+      );
+    }
+
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      itemCount: framesToShow.length,
+      itemBuilder: (context, index) {
+        final frame = framesToShow[index];
+        return Container(
+          width: 120,
+          margin: const EdgeInsets.symmetric(horizontal: 8),
+          child: FrameCard(
+            frame: frame,
+            isSelected: _selectedFrame == frame.filename,
+            onTap: () {
+              setState(() {
+                _selectedFrame = frame.filename;
+              });
+              if (_selectedImage != null) {
+                _tryFrame();
+              }
+            },
+          ),
+        );
+      },
     );
   }
 }
