@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Real-Time Virtual Try-On</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .content { display: flex; gap: 30px; }
+        .video-section { flex: 2; }
+        .controls-section { flex: 1; background: #f8f9fa; padding: 20px; border-radius: 8px; }
+        .video-container { 
+            position: relative; 
+            width: 100%; 
+            height: 480px; 
+            border: 2px solid #ddd; 
+            border-radius: 8px; 
+            background: #000; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        #videoElement { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover;
+            display: none; 
+        }
+        #processedImage { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror flip */
+        }
+        .loader {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            z-index: 10;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        .control-group { margin-bottom: 25px; }
+        .control-group h3 { margin-bottom: 15px; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 5px; }
+        .frame-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .frame-option { border: 2px solid #ddd; border-radius: 8px; padding: 10px; text-align: center; cursor: pointer; transition: all 0.3s; background: white; }
+        .frame-option:hover { border-color: #007bff; transform: translateY(-2px); }
+        .frame-option.selected { border-color: #007bff; background: #e3f2fd; }
+        .frame-option img { width: 100%; height: 60px; object-fit: contain; margin-bottom: 5px; }
+        .frame-name { font-size: 12px; font-weight: bold; color: #333; }
+        .frame-shape { font-size: 10px; color: #666; }
+        .size-options { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .size-option { padding: 12px; border: 2px solid #ddd; border-radius: 6px; cursor: pointer; text-align: center; transition: all 0.3s; background: white; }
+        .size-option:hover { border-color: #28a745; }
+        .size-option.selected { border-color: #28a745; background: #d4edda; }
+        .distance-guide { margin: 15px 0; padding: 15px; background: #e8f4fd; border-radius: 8px; border-left: 4px solid #007bff; }
+        .status { padding: 12px; background: #e9ecef; border-radius: 5px; margin-top: 20px; font-size: 14px; min-height: 60px; }
+        .btn { display: block; width: 100%; padding: 12px; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 10px; transition: all 0.3s; }
+        .btn-success { background: #28a745; }
+        .btn-success:hover { background: #218838; }
+        .btn-secondary { background: #6c757d; }
+        .btn-secondary:hover { background: #545b62; }
+        .btn-warning { background: #ffc107; color: #212529; }
+        .btn-warning:hover { background: #e0a800; }
+        .recommendations-section { margin-top: 20px; padding: 15px; background: #e8f5e8; border-radius: 8px; border-left: 4px solid #28a745; }
+        .camera-controls { display: flex; gap: 10px; margin-bottom: 15px; }
+        .status-indicator { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; }
+        .status-optimal { background: #28a745; }
+        .status-too-close { background: #fd7e14; }
+        .status-too-far { background: #dc3545; }
+        .status-unknown { background: #6c757d; }
+        .loading-text { 
+            display: inline-block; 
+            margin-left: 10px; 
+            color: #007bff; 
+            font-weight: bold; 
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Real-Time Glass Frame Try-On</h1>
+            <p>Use your camera to try different frames with AI face shape analysis!</p>
+        </div>
+        
+        <div class="content">
+            <div class="video-section">
+                <div class="video-container">
+                    <div class="loader" id="loader">
+                        <div class="spinner"></div>
+                        <div>Starting Camera...</div>
+                    </div>
+                    <video id="videoElement" autoplay playsinline></video>
+                    <img id="processedImage" alt="Processed Frame" class="hidden">
+                </div>
+                <div class="camera-controls">
+                    <button class="btn btn-warning" id="switchCamera">Switch Camera</button>
+                </div>
+            </div>
+            
+            <div class="controls-section">
+                <div class="control-group">
+                    <h3>🕶️ Select Frame Style</h3>
+                    <div class="frame-options" id="frameOptions">
+                        {% for frame in frames %}
+                            <div class="frame-option {% if loop.first %}selected{% endif %}" 
+                                 data-frame="{{ frame.filename }}">
+                                <img src="{{ url_for('frame_image', filename=frame.filename) }}" 
+                                     alt="{{ frame.name }}"
+                                     onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjYwIiB2aWV3Qm94PSIwIDAgMTAwIDYwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodD0iNjAiIGZpbGw9IiNlZWVlZWUiLz48dGV4dCB4PSI1MCIgeT0iMzAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxMiIgZmlsbD0iIzk5OTk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSI+R2xhc3NlczwvdGV4dD48L3N2Zz4='">
+                                <div class="frame-name">{{ frame.name }}</div>
+                                <div class="frame-shape">{{ frame.shape }}</div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="distance-guide">
+                    <h4>📏 Distance Guide</h4>
+                    <p style="margin: 5px 0; font-size: 14px; color: #333;">
+                        <strong>For accurate face shape detection:</strong>
+                    </p>
+                    <ul style="margin: 5px 0; padding-left: 20px; font-size: 13px; color: #555;">
+                        <li>Position yourself <strong>40-70 cm</strong> from camera</li>
+                        <li>Face directly towards camera</li>
+                        <li>Ensure good lighting</li>
+                        <li>Keep face centered in frame</li>
+                    </ul>
+                </div>
+                
+                <div class="control-group">
+                    <h3>📏 Select Frame Size</h3>
+                    <div class="size-options">
+                        {% for size_key, size_info in frame_sizes.items() %}
+                            <div class="size-option {% if size_key == 'medium' %}selected{% endif %}" 
+                                 data-size="{{ size_key }}">
+                                {{ size_info.label }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="status" id="status">
+                    <div class="loading-text">Initializing...</div>
+                </div>
+
+                <button class="btn btn-success" id="getRecommendationsBtn" style="display: none;">
+                    🎯 Get Frame Recommendations
+                </button>
+
+                <div class="recommendations-section" id="recommendationsSection" style="display: none;">
+                    <h3>💡 Recommended Frames for <span id="detectedFaceShape"></span> Face</h3>
+                    <div class="frame-options" id="recommendedFrames">
+                        <!-- Recommended frames will be loaded here -->
+                    </div>
+                </div>
+                
+                <button class="btn btn-secondary" onclick="location.href='{{ url_for('index') }}'">
+                    ← Back to Home
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentFrame = '{{ frames[0].filename if frames else "" }}';
+        let currentSize = 'medium';
+        let detectedFaceShape = null;
+        let stream = null;
+        let currentFacingMode = 'user'; // 'user' for front camera, 'environment' for back
+        let processingInterval = null;
+        let isProcessing = false;
+
+        // DOM elements
+        const videoElement = document.getElementById('videoElement');
+        const processedImage = document.getElementById('processedImage');
+        const switchCameraBtn = document.getElementById('switchCamera');
+        const statusDiv = document.getElementById('status');
+        const loader = document.getElementById('loader');
+
+        // Auto-start camera when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            startCamera();
+        });
+
+        // Switch camera
+        switchCameraBtn.addEventListener('click', async () => {
+            if (stream) {
+                showLoader("Switching camera...");
+                stopCamera();
+                currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+                
+                // Small delay before starting new camera
+                setTimeout(async () => {
+                    try {
+                        await startCamera();
+                    } catch (error) {
+                        updateStatus(`<strong>Camera Error:</strong><br>${error.message}`);
+                    }
+                }, 500);
+            }
+        });
+
+        async function startCamera() {
+            try {
+                showLoader("Starting camera...");
+                
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        facingMode: currentFacingMode,
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    },
+                    audio: false
+                });
+                
+                videoElement.srcObject = stream;
+                
+                // Wait for video to be ready
+                videoElement.addEventListener('loadedmetadata', function() {
+                    hideLoader();
+                    updateStatus('<strong>Camera started!</strong><br>Frame processing will begin automatically.');
+                    startFrameProcessing();
+                });
+                
+            } catch (error) {
+                console.error('Error starting camera:', error);
+                hideLoader();
+                if (error.name === 'NotAllowedError') {
+                    updateStatus('<strong>Camera Permission Required:</strong><br>Please allow camera access and refresh the page.');
+                } else if (error.name === 'NotFoundError') {
+                    updateStatus('<strong>No Camera Found:</strong><br>Please check if your camera is connected and try again.');
+                } else {
+                    updateStatus(`<strong>Camera Error:</strong><br>${error.message}`);
+                }
+            }
+        }
+
+        function showLoader(message = "Loading...") {
+            loader.style.display = 'block';
+            processedImage.classList.add('hidden');
+            videoElement.classList.add('hidden');
+            updateStatus(`<div class="loading-text">${message}</div>`);
+        }
+
+        function hideLoader() {
+            loader.style.display = 'none';
+            processedImage.classList.remove('hidden');
+        }
+
+        // Frame selection
+        document.querySelectorAll('.frame-option').forEach(option => {
+            option.addEventListener('click', function() {
+                const frame = this.dataset.frame;
+                
+                // Update UI
+                document.querySelectorAll('.frame-option').forEach(opt => opt.classList.remove('selected'));
+                this.classList.add('selected');
+                
+                currentFrame = frame;
+                updateStatus(`Selected: ${this.querySelector('.frame-name').textContent}`);
+            });
+        });
+
+        // Size selection
+        document.querySelectorAll('.size-option').forEach(option => {
+            option.addEventListener('click', function() {
+                const size = this.dataset.size;
+                
+                // Update UI
+                document.querySelectorAll('.size-option').forEach(opt => opt.classList.remove('selected'));
+                this.classList.add('selected');
+                
+                currentSize = size;
+                updateStatus(`Size changed to: ${this.textContent}`);
+            });
+        });
+
+        // Get recommendations button
+        document.getElementById('getRecommendationsBtn').addEventListener('click', function() {
+            if (!detectedFaceShape) {
+                alert('Please wait for face shape analysis to complete first.');
+                return;
+            }
+            
+            getFrameRecommendations(detectedFaceShape);
+        });
+
+        // Frame processing function
+        function startFrameProcessing() {
+            if (processingInterval) {
+                clearInterval(processingInterval);
+            }
+            
+            processingInterval = setInterval(() => {
+                if (!isProcessing && stream && videoElement.videoWidth > 0) {
+                    processFrame();
+                }
+            }, 200); // Process 5 frames per second
+        }
+
+        function processFrame() {
+            if (!stream || videoElement.videoWidth === 0) return;
+            
+            isProcessing = true;
+            
+            // Create canvas to capture frame
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            
+            // Draw video frame to canvas (front camera is already mirrored)
+            context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+            
+            // Convert to base64
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // Send to server for processing
+            fetch('/api/process_frame', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    image: imageData,
+                    frame: currentFrame,
+                    size: currentSize
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Display processed image with mirror flip
+                    processedImage.src = data.processed_image;
+                    
+                    // Update status with face shape and distance info
+                    updateStatusWithData(data.face_shape, data.distance_message, data.distance_status);
+                    
+                    // Show recommendations button if face shape detected
+                    if (data.face_shape && data.face_shape !== "Unknown") {
+                        detectedFaceShape = data.face_shape;
+                        document.getElementById('getRecommendationsBtn').style.display = 'block';
+                    }
+                } else {
+                    updateStatus(`Processing error: ${data.error}`);
+                }
+                
+                isProcessing = false;
+            })
+            .catch(error => {
+                console.error('Processing error:', error);
+                updateStatus(`Network error: ${error.message}`);
+                isProcessing = false;
+            });
+        }
+
+        function updateStatus(message) {
+            statusDiv.innerHTML = message;
+        }
+
+        function updateStatusWithData(faceShape, distanceMessage, distanceStatus) {
+            const statusClass = `status-${distanceStatus}`;
+            
+            let statusHTML = `<strong>Live Processing</strong><br>`;
+            
+            if (faceShape && faceShape !== "Unknown") {
+                statusHTML += `Face Shape: <span style="color: #28a745;">${faceShape}</span><br>`;
+            }
+            
+            statusHTML += `Distance: <span class="status-indicator ${statusClass}"></span>${distanceMessage}`;
+            
+            statusDiv.innerHTML = statusHTML;
+        }
+
+        function stopCamera() {
+            if (processingInterval) {
+                clearInterval(processingInterval);
+                processingInterval = null;
+            }
+            
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            videoElement.srcObject = null;
+            processedImage.classList.add('hidden');
+            isProcessing = false;
+        }
+
+        function getFrameRecommendations(faceShape) {
+            updateStatus(`<strong>Analyzing...</strong><br>Finding perfect frames for ${faceShape} face`);
+            
+            fetch(`/api/recommendations/${faceShape}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displayRecommendedFrames(data.face_shape, data.recommended_frames);
+                    updateStatus(`<strong>Success!</strong><br>Found ${data.recommended_frames.length} recommended frames for ${data.face_shape} face`);
+                } else {
+                    updateStatus(`<strong>Error:</strong><br>${data.error}`);
+                }
+            })
+            .catch(error => {
+                updateStatus(`<strong>Network Error:</strong><br>${error}`);
+            });
+        }
+
+        function displayRecommendedFrames(faceShape, recommendedFrames) {
+            const recommendationsSection = document.getElementById('recommendationsSection');
+            const detectedFaceShapeSpan = document.getElementById('detectedFaceShape');
+            const recommendedFramesDiv = document.getElementById('recommendedFrames');
+            
+            detectedFaceShapeSpan.textContent = faceShape;
+            recommendedFramesDiv.innerHTML = '';
+            
+            if (recommendedFrames.length === 0) {
+                recommendedFramesDiv.innerHTML = '<p>No recommendations found. Try different frames manually.</p>';
+                recommendationsSection.style.display = 'block';
+                return;
+            }
+            
+            recommendedFrames.forEach(frame => {
+                const frameOption = document.createElement('div');
+                frameOption.className = 'frame-option';
+                frameOption.dataset.frame = frame.filename;
+                frameOption.innerHTML = `
+                    <img src="{{ url_for('frame_image', filename='') }}${frame.filename}" 
+                         alt="${frame.name}"
+                         onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjYwIiB2aWV3Qm94PSIwIDAgMTAwIDYwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodD0iNjAiIGZpbGw9IiNlZWVlZWUiLz48dGV4dCB4PSI1MCIgeT0iMzAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxMiIgZmlsbD0iIzk5OTk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSI+R2xhc3NlczwvdGV4dD48L3N2Zz4='">
+                    <div class="frame-name">${frame.name}</div>
+                    <div class="frame-shape">${frame.shape}</div>
+                `;
+                
+                frameOption.addEventListener('click', function() {
+                    document.querySelectorAll('.frame-option').forEach(opt => opt.classList.remove('selected'));
+                    this.classList.add('selected');
+                    currentFrame = frame.filename;
+                    updateStatus(`<strong>Selected:</strong><br>${frame.name} (${frame.shape})`);
+                });
+                
+                recommendedFramesDiv.appendChild(frameOption);
+            });
+            
+            recommendationsSection.style.display = 'block';
+        }
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            stopCamera();
+        });
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // Page is hidden, stop camera to save resources
+                if (stream) {
+                    stopCamera();
+                    showLoader("Camera paused. Return to page to continue...");
+                }
+            } else if (!stream) {
+                // Page is visible again, restart camera
+                startCamera();
+            }
+        });
+    </script>
+</body>
+</html>

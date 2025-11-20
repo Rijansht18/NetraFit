@@ -5,7 +5,7 @@ import 'dart:io';
 Future<void> testServerConnection() async {
   try {
     final client = HttpClient();
-    final request = await client.getUrl(Uri.parse('http://192.168.1.80:5000/'));
+    final request = await client.getUrl(Uri.parse('https://violetlike-onward-marley.ngrok-free.dev/'));
     final response = await request.close();
     print('✅ Server connection test: ${response.statusCode}');
     if (response.statusCode == 200) {

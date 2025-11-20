@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../providers/frame_provider.dart';
 import '../widgets/frame_card.dart';
 
 class TryOnScreen extends StatefulWidget {
   final List<String>? recommendedFrameFilenames;
-  final bool showHeader; // Add this parameter
+  final bool showHeader;
 
   const TryOnScreen({super.key, this.recommendedFrameFilenames, this.showHeader = false});
 
@@ -17,17 +20,61 @@ class TryOnScreen extends StatefulWidget {
 class _TryOnScreenState extends State<TryOnScreen> {
   late WebViewController _webViewController;
   String _selectedFrame = '';
-  double _sizeValue = 1.0; // 0.8=small, 1.0=medium, 1.2=large
+  double _sizeValue = 1.0;
   bool _isLoading = true;
   bool _hasError = false;
   bool _isPageLoaded = false;
   bool _framesLoaded = false;
+  bool _processingStarted = false;
+  bool _cameraPermissionGranted = false;
 
   @override
   void initState() {
     super.initState();
-    _initializeWebView();
-    _loadFrames();
+    _requestCameraPermission().then((_) {
+      _initializeWebView();
+      _loadFrames();
+    });
+  }
+
+  Future<void> _requestCameraPermission() async {
+    print('Requesting camera permission...');
+    final status = await Permission.camera.request();
+    if (status.isGranted) {
+      print('Camera permission granted');
+      setState(() {
+        _cameraPermissionGranted = true;
+      });
+    } else {
+      print('Camera permission denied: $status');
+      setState(() {
+        _cameraPermissionGranted = false;
+      });
+
+      // Show permission dialog
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Camera Permission Required'),
+            content: const Text(
+              'This app needs camera access for virtual try-on. '
+                  'Please grant camera permission in app settings.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => openAppSettings(),
+                child: const Text('Open Settings'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
   }
 
   void _loadFrames() {
@@ -53,27 +100,45 @@ class _TryOnScreenState extends State<TryOnScreen> {
 
   void _autoSelectFrame(FrameProvider frameProvider) {
     if (frameProvider.frames.isNotEmpty && _selectedFrame.isEmpty) {
+      String frameToSelect;
+
       if (widget.recommendedFrameFilenames != null &&
           widget.recommendedFrameFilenames!.isNotEmpty) {
-        setState(() {
-          _selectedFrame = widget.recommendedFrameFilenames!.first;
-        });
+        frameToSelect = widget.recommendedFrameFilenames!.first;
       } else {
-        setState(() {
-          _selectedFrame = frameProvider.frames.first.filename;
-        });
+        frameToSelect = frameProvider.frames.first.filename;
+      }
+
+      setState(() {
+        _selectedFrame = frameToSelect;
+      });
+
+      // Wait for webview to load before sending frame change
+      if (_isPageLoaded) {
+        _changeFrameOnWebView(frameToSelect);
       }
     }
   }
 
   void _initializeWebView() {
-    _webViewController = WebViewController()
+    final PlatformWebViewControllerCreationParams params;
+    if (WebViewPlatform.instance is WebKitWebViewPlatform) {
+      params = WebKitWebViewControllerCreationParams(
+        allowsInlineMediaPlayback: true,
+        mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
+      );
+    } else {
+      params = const PlatformWebViewControllerCreationParams();
+    }
+
+    _webViewController = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0x00000000))
+      ..enableZoom(false)
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (int progress) {
-            print('Loading progress: $progress%');
+            print('WebView loading progress: $progress%');
           },
           onPageStarted: (String url) {
             setState(() {
@@ -87,88 +152,172 @@ class _TryOnScreenState extends State<TryOnScreen> {
               _isLoading = false;
               _isPageLoaded = true;
             });
-            print('Page loaded: $url');
-            _hideWebControls();
+            print('WebView page loaded: $url');
+
+            // Grant camera permissions via JavaScript
+            _grantCameraPermissions();
+
+            // Auto-select frame after page loads
+            if (_selectedFrame.isNotEmpty) {
+              _changeFrameOnWebView(_selectedFrame);
+            }
           },
           onWebResourceError: (WebResourceError error) {
             setState(() {
               _isLoading = false;
               _hasError = true;
             });
-            print('WebResourceError: ${error.errorCode} - ${error.description}');
+            print('WebView error: ${error.errorCode} - ${error.description}');
+            print('Error URL: ${error.url}');
+            print('Error type: ${error.errorType}');
+          },
+          onUrlChange: (UrlChange change) {
+            print('URL changed to: ${change.url}');
+          },
+          onNavigationRequest: (NavigationRequest request) {
+            print('Navigation request to: ${request.url}');
+            // Allow all navigation for ngrok
+            return NavigationDecision.navigate;
           },
         ),
-      )
-      ..loadRequest(Uri.parse('http://192.168.1.80:5000/real_time'));
+      );
+
+    // Platform-specific configurations
+    if (_webViewController.platform is AndroidWebViewController) {
+      AndroidWebViewController.enableDebugging(true);
+      final AndroidWebViewController androidController =
+      _webViewController.platform as AndroidWebViewController;
+      androidController.setMediaPlaybackRequiresUserGesture(false);
+      androidController.setMixedContentMode(MixedContentMode.compatibilityMode);
+
+      // Enable camera for Android WebView
+      androidController.setOnPlatformPermissionRequest((request) {
+        print('Platform permission request: ${request.types}');
+        request.grant();
+      });
+    }
+
+    // Load the URL with retry mechanism
+    _loadUrlWithRetry();
   }
 
-  void _hideWebControls() {
-    final targetedJS = """
-    function setupCleanCameraView() {
-      document.body.style.margin = '0';
-      document.body.style.padding = '0';
-      document.body.style.overflow = 'hidden';
-      document.body.style.background = 'black';
-      document.body.style.width = '100vw';
-      document.body.style.height = '100vh';
+  void _loadUrlWithRetry({int retryCount = 0}) {
+    const maxRetries = 2;
+
+    final url = 'https://violetlike-onward-marley.ngrok-free.dev/client_camera';
+    print('Loading URL: $url (attempt ${retryCount + 1})');
+
+    _webViewController.loadRequest(Uri.parse(url)).then((_) {
+      print('URL loaded successfully');
+    }).catchError((error) {
+      print('Failed to load URL: $error');
+      if (retryCount < maxRetries) {
+        print('Retrying in 2 seconds...');
+        Future.delayed(const Duration(seconds: 2), () {
+          _loadUrlWithRetry(retryCount: retryCount + 1);
+        });
+      } else {
+        setState(() {
+          _hasError = true;
+          _isLoading = false;
+        });
+
+        // Try alternative URLs as fallback
+        _tryAlternativeUrls();
+      }
+    });
+  }
+
+  void _tryAlternativeUrls() {
+    final urls = [
+      'https://violetlike-onward-marley.ngrok-free.dev/client_camera',
+      'http://violetlike-onward-marley.ngrok-free.dev/client_camera',
+    ];
+
+    print('Trying alternative URLs...');
+    for (final url in urls) {
+      _webViewController.loadRequest(Uri.parse(url));
+      break;
+    }
+  }
+
+  void _grantCameraPermissions() {
+    if (!_cameraPermissionGranted) {
+      print('Camera permission not granted, skipping JavaScript camera access');
+      return;
+    }
+
+    // Grant camera permissions via JavaScript
+    final jsCode = '''
+      console.log('Attempting to grant camera permissions...');
       
-      let cameraImg = null;
-      const allImages = document.querySelectorAll('img');
-      for (let img of allImages) {
-        const src = img.src || '';
-        if (src.includes('video_feed') || img.alt.includes('camera') || 
-            img.id.includes('video') || img.className.includes('video')) {
-          cameraImg = img;
-          break;
+      // Function to request camera access
+      function requestCameraAccess() {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          navigator.mediaDevices.getUserMedia({ 
+            video: { 
+              facingMode: 'user',
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            } 
+          })
+          .then(function(stream) {
+            console.log('Camera access granted successfully');
+            // Create video element and play stream
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.autoplay = true;
+            video.playsInline = true;
+            document.body.appendChild(video);
+          })
+          .catch(function(error) {
+            console.log('Camera access error:', error.name, error.message);
+            // Retry after delay
+            setTimeout(requestCameraAccess, 1000);
+          });
+        } else {
+          console.log('getUserMedia not supported');
         }
       }
       
-      if (!cameraImg) {
-        let largestImg = null;
-        let maxArea = 0;
-        allImages.forEach(img => {
-          const rect = img.getBoundingClientRect();
-          const area = rect.width * rect.height;
-          if (area > maxArea && rect.width > 100 && rect.height > 100) {
-            maxArea = area;
-            largestImg = img;
+      // Override permission requests
+      if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({name: 'camera'}).then(function(result) {
+          console.log('Camera permission state:', result.state);
+          if (result.state === 'prompt' || result.state === 'denied') {
+            result.grant().then(function() {
+              console.log('Permission granted via query API');
+              requestCameraAccess();
+            }).catch(function(error) {
+              console.log('Permission grant failed:', error);
+              requestCameraAccess();
+            });
+          } else if (result.state === 'granted') {
+            requestCameraAccess();
           }
+        }).catch(function(error) {
+          console.log('Permission query failed:', error);
+          requestCameraAccess();
         });
-        cameraImg = largestImg;
+      } else {
+        // Direct approach if permissions API not available
+        requestCameraAccess();
       }
       
-      if (cameraImg) {
-        const hideElement = (el) => {
-          if (el === cameraImg || el.contains(cameraImg)) {
-            el.style.margin = '0';
-            el.style.padding = '0';
-            el.style.background = 'transparent';
-            el.style.border = 'none';
-            el.style.width = '100%';
-            el.style.height = '100%';
-          } else {
-            el.style.display = 'none';
-          }
-        };
-        
-        Array.from(document.body.children).forEach(hideElement);
-        
-        cameraImg.style.position = 'fixed';
-        cameraImg.style.top = '0';
-        cameraImg.style.left = '0';
-        cameraImg.style.width = '100%';
-        cameraImg.style.height = '100%';
-        cameraImg.style.objectFit = 'cover';
-        cameraImg.style.zIndex = '9999';
-      }
-    }
-    
-    setupCleanCameraView();
-    const interval = setInterval(setupCleanCameraView, 500);
-    setTimeout(() => clearInterval(interval), 5000);
-  """;
+      // Listen for camera-related events
+      document.addEventListener('click', function() {
+        requestCameraAccess();
+      });
+      
+      // Try initial request
+      setTimeout(requestCameraAccess, 500);
+    ''';
 
-    _webViewController.runJavaScript(targetedJS);
+    _webViewController.runJavaScript(jsCode).then((_) {
+      print('Camera permission JavaScript executed');
+    }).catchError((error) {
+      print('Error executing camera permission JavaScript: $error');
+    });
   }
 
   String _getSizeKey() {
@@ -181,25 +330,33 @@ class _TryOnScreenState extends State<TryOnScreen> {
     setState(() {
       _selectedFrame = frameFilename;
     });
+    _changeFrameOnWebView(frameFilename);
+  }
 
-    final javascript = """
-      fetch('/change_frame', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          frame: '$frameFilename',
-          size: '${_getSizeKey()}'
-        })
-      }).then(response => {
-        console.log('Frame changed to: $frameFilename');
-      }).catch(error => {
-        console.log('Frame change error:', error);
+  void _changeFrameOnWebView(String frameFilename) {
+    if (!_isPageLoaded) {
+      print('WebView not ready, queuing frame change: $frameFilename');
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _changeFrameOnWebView(frameFilename);
       });
-    """;
+      return;
+    }
 
-    _webViewController.runJavaScript(javascript);
+    final javascript = "changeFrame('$frameFilename', '${_getSizeKey()}');";
+    _webViewController.runJavaScript(javascript).then((_) {
+      print('Frame changed to: $frameFilename');
+      if (!_processingStarted) {
+        setState(() {
+          _processingStarted = true;
+        });
+      }
+    }).catchError((error) {
+      print('Error changing frame: $error');
+      // Retry after delay
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        _changeFrameOnWebView(frameFilename);
+      });
+    });
   }
 
   void _changeSize(double newSize) {
@@ -207,28 +364,30 @@ class _TryOnScreenState extends State<TryOnScreen> {
       _sizeValue = newSize;
     });
 
-    final javascript = """
-      fetch('/change_frame', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          frame: '$_selectedFrame',
-          size: '${_getSizeKey()}'
-        })
-      }).then(response => {
-        console.log('Size changed to: ${_getSizeKey()}');
-      }).catch(error => {
-        console.log('Size change error:', error);
-      });
-    """;
+    if (!_isPageLoaded || _selectedFrame.isEmpty) return;
 
-    _webViewController.runJavaScript(javascript);
+    final javascript = "changeSize('${_getSizeKey()}');";
+    _webViewController.runJavaScript(javascript).then((_) {
+      print('Size changed to: ${_getSizeKey()}');
+    }).catchError((error) {
+      print('Error changing size: $error');
+    });
   }
 
   void _refreshCameraView() {
-    _webViewController.reload();
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
+
+    // Reload and re-grant permissions
+    _webViewController.reload().then((_) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (_isPageLoaded) {
+          _grantCameraPermissions();
+        }
+      });
+    });
   }
 
   Widget _buildWebViewContent() {
@@ -245,15 +404,39 @@ class _TryOnScreenState extends State<TryOnScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Make sure Flask server is running\nat 192.168.1.80:5000',
+              'Make sure the server is running\nand you have internet connection',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white),
+              style: TextStyle(color: Colors.white70),
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _initializeWebView,
-              child: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: _refreshCameraView,
+              child: const Text('Retry Connection'),
             ),
+            const SizedBox(height: 8),
+            if (!_cameraPermissionGranted)
+              Column(
+                children: [
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Camera permission required',
+                    style: TextStyle(color: Colors.orange),
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: _requestCameraPermission,
+                    child: const Text('Grant Camera Permission'),
+                  ),
+                ],
+              ),
           ],
         ),
       );
@@ -263,6 +446,7 @@ class _TryOnScreenState extends State<TryOnScreen> {
       children: [
         WebViewWidget(controller: _webViewController),
 
+        // Loading indicator
         if (_isLoading)
           Container(
             color: Colors.black,
@@ -274,13 +458,19 @@ class _TryOnScreenState extends State<TryOnScreen> {
                   SizedBox(height: 16),
                   Text(
                     'Loading Camera...',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Please wait',
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ],
               ),
             ),
           ),
 
+        // Refresh button when loaded
         if (_isPageLoaded && !_isLoading)
           Positioned(
             top: 10,
@@ -288,7 +478,7 @@ class _TryOnScreenState extends State<TryOnScreen> {
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.black.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(20),
+                shape: BoxShape.circle,
               ),
               child: IconButton(
                 icon: const Icon(Icons.refresh, color: Colors.white),
@@ -297,16 +487,83 @@ class _TryOnScreenState extends State<TryOnScreen> {
               ),
             ),
           ),
+
+        // Camera status indicator
+        // if (_isPageLoaded && !_isLoading && !_processingStarted)
+        //   Positioned(
+        //     top: 10,
+        //     left: 10,
+        //     child: Container(
+        //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        //       decoration: BoxDecoration(
+        //         color: Colors.orange.withOpacity(0.8),
+        //         borderRadius: BorderRadius.circular(20),
+        //       ),
+        //       child: Row(
+        //         children: [
+        //           Icon(
+        //             _cameraPermissionGranted ? Icons.camera_alt : Icons.camera,
+        //             color: Colors.white,
+        //             size: 16,
+        //           ),
+        //           const SizedBox(width: 6),
+        //           Text(
+        //             _cameraPermissionGranted ? 'Select a frame to start' : 'Camera access needed',
+        //             style: const TextStyle(color: Colors.white, fontSize: 12),
+        //           ),
+        //         ],
+        //       ),
+        //     ),
+        //   ),
+
+        // Processing indicator
+        // if (_processingStarted && _cameraPermissionGranted)
+        //   Positioned(
+        //     top: 10,
+        //     left: 10,
+        //     child: Container(
+        //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        //       decoration: BoxDecoration(
+        //         color: Colors.green.withOpacity(0.8),
+        //         borderRadius: BorderRadius.circular(20),
+        //       ),
+        //       child: const Row(
+        //         children: [
+        //           Icon(Icons.check_circle, color: Colors.white, size: 16),
+        //           SizedBox(width: 6),
+        //           Text(
+        //             'Live Processing',
+        //             style: TextStyle(color: Colors.white, fontSize: 12),
+        //           ),
+        //         ],
+        //       ),
+        //     ),
+        //   ),
       ],
     );
   }
 
   Widget _buildSizeSlider() {
     return Container(
-      width: 60,
+      width: 70,
       height: 200,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          const Text(
+            'SIZE',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
           // Vertical Slider
           Expanded(
             child: RotatedBox(
@@ -317,13 +574,118 @@ class _TryOnScreenState extends State<TryOnScreen> {
                 max: 1.2,
                 divisions: 4,
                 onChanged: _changeSize,
+                onChangeEnd: _changeSize,
                 activeColor: Colors.blue,
-                inactiveColor: Colors.grey,
+                inactiveColor: Colors.grey.shade600,
+                label: _getSizeKey().toUpperCase(),
               ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _getSizeKey().toUpperCase(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildFrameSelectionSection(FrameProvider frameProvider) {
+    final framesToShow = widget.recommendedFrameFilenames != null &&
+        widget.recommendedFrameFilenames!.isNotEmpty
+        ? frameProvider.frames
+        .where((frame) =>
+        widget.recommendedFrameFilenames!.contains(frame.filename))
+        .toList()
+        : frameProvider.frames;
+
+    if (framesToShow.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.visibility_off, size: 48, color: Colors.grey),
+            const SizedBox(height: 8),
+            const Text(
+              'No frames available',
+              style: TextStyle(color: Colors.grey, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: () {
+                frameProvider.loadFrames();
+              },
+              child: const Text('Reload Frames'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // Header with frame count
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Select Frame (${framesToShow.length})',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              if (widget.recommendedFrameFilenames != null &&
+                  widget.recommendedFrameFilenames!.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green),
+                  ),
+                  child: const Text(
+                    'Recommended',
+                    style: TextStyle(
+                      color: Colors.green,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+
+        // Frame list
+        Expanded(
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: framesToShow.length,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            itemBuilder: (context, index) {
+              final frame = framesToShow[index];
+              return Container(
+                width: 130,
+                margin: const EdgeInsets.symmetric(horizontal: 6),
+                child: FrameCard(
+                  frame: frame,
+                  isSelected: _selectedFrame == frame.filename,
+                  onTap: () => _changeFrame(frame.filename),
+                  showShape: true,
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -334,9 +696,41 @@ class _TryOnScreenState extends State<TryOnScreen> {
     return Scaffold(
       appBar: widget.showHeader
           ? AppBar(
-        title: const Text('AR Try On'),
+        title: const Text('Virtual Try-On'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('How to Use'),
+                  content: const Text(
+                    '• Select a frame from the list below\n'
+                        '• Adjust size using the slider on the right\n'
+                        '• Position your face 40-70cm from camera\n'
+                        '• Ensure good lighting for best results\n'
+                        '• Grant camera permission when prompted',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          if (!_cameraPermissionGranted)
+            IconButton(
+              icon: const Icon(Icons.camera_alt),
+              onPressed: _requestCameraPermission,
+              tooltip: 'Grant Camera Permission',
+            ),
+        ],
       )
           : null,
       body: Column(
@@ -349,9 +743,10 @@ class _TryOnScreenState extends State<TryOnScreen> {
               child: Stack(
                 children: [
                   _buildWebViewContent(),
-                  // Simple Size Slider on right side
+
+                  // Size Slider on right side
                   Positioned(
-                    right: 1,
+                    right: 8,
                     top: MediaQuery.of(context).size.height * 0.25,
                     child: _buildSizeSlider(),
                   ),
@@ -364,64 +759,62 @@ class _TryOnScreenState extends State<TryOnScreen> {
           Expanded(
             flex: 2,
             child: Container(
-              color: Colors.white,
-              child: Column(
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Text(
-                      'Select Frame',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: !_framesLoaded || frameProvider.isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : _buildFrameList(frameProvider),
-                  ),
-                ],
-              ),
+              color: Colors.grey[50],
+              child: !_framesLoaded || frameProvider.isLoading
+                  ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Loading frames...'),
+                  ],
+                ),
+              )
+                  : _buildFrameSelectionSection(frameProvider),
             ),
           ),
         ],
       ),
-    );
-  }
 
-  Widget _buildFrameList(FrameProvider frameProvider) {
-    final framesToShow = widget.recommendedFrameFilenames != null &&
-        widget.recommendedFrameFilenames!.isNotEmpty
-        ? frameProvider.frames.where((frame) =>
-        widget.recommendedFrameFilenames!.contains(frame.filename)).toList()
-        : frameProvider.frames;
-
-    if (framesToShow.isEmpty) {
-      return const Center(
-        child: Text(
-          'No frames available',
-          style: TextStyle(color: Colors.grey),
+      // Bottom navigation for quick actions
+      persistentFooterButtons: _isPageLoaded && !_hasError
+          ? [
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.camera_alt),
+                label: const Text('Refresh Camera'),
+                onPressed: _refreshCameraView,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.settings),
+                label: const Text('Reset Size'),
+                onPressed: () => _changeSize(1.0),
+              ),
+            ),
+            if (!_cameraPermissionGranted) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.camera_alt),
+                  label: const Text('Enable Camera'),
+                  onPressed: _requestCameraPermission,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
-      );
-    }
-
-    return ListView.builder(
-      scrollDirection: Axis.horizontal,
-      itemCount: framesToShow.length,
-      itemBuilder: (context, index) {
-        final frame = framesToShow[index];
-        return Container(
-          width: 120,
-          margin: const EdgeInsets.symmetric(horizontal: 8),
-          child: FrameCard(
-            frame: frame,
-            isSelected: _selectedFrame == frame.filename,
-            onTap: () => _changeFrame(frame.filename),
-          ),
-        );
-      },
+      ]
+          : null,
     );
   }
 
@@ -431,5 +824,12 @@ class _TryOnScreenState extends State<TryOnScreen> {
     if (!_framesLoaded) {
       _loadFrames();
     }
+  }
+
+  @override
+  void dispose() {
+    // Clean up webview resources
+    _webViewController.clearCache();
+    super.dispose();
   }
 }

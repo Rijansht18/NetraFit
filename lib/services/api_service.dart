@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import '../models/frame_model.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.1.80:5000'; // Change to your computer's IP
+  static const String baseUrl = 'https://violetlike-onward-marley.ngrok-free.dev'; // Change to your computer's IP
 
   // Get all available frames
   static Future<List<Frame>> getFrames() async {

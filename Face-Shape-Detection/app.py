@@ -1,6 +1,5 @@
-
 from flask import Flask, request, render_template, Response, url_for, send_from_directory, jsonify
-from flask_cors import CORS  # Add this import
+from flask_cors import CORS
 import cv2
 import numpy as np
 import pickle
@@ -13,7 +12,7 @@ from mediapipe.framework.formats import landmark_pb2
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import time
-import base64  # Add this import
+import base64
 import datetime
 
 from overlay import overlay_glasses_with_handles, load_glasses
@@ -69,11 +68,15 @@ TARGET_DISTANCE = 50  # Target 50cm for analysis
 
 def estimate_distance(landmarks):
     """Estimate distance from camera based on face width"""
-    left_cheek = landmarks[234]
-    right_cheek = landmarks[454]
-    face_width = np.linalg.norm(np.array(left_cheek) - np.array(right_cheek))
-    estimated_distance = (STANDARD_FACE_WIDTH_50CM / face_width) * 50
-    return estimated_distance
+    try:
+        left_cheek = landmarks[234]
+        right_cheek = landmarks[454]
+        face_width = np.linalg.norm(np.array(left_cheek) - np.array(right_cheek))
+        estimated_distance = (STANDARD_FACE_WIDTH_50CM / face_width) * 50
+        return estimated_distance
+    except Exception as e:
+        print(f"Distance estimation error: {e}")
+        return 0
 
 def get_distance_status(distance):
     """Get status message based on distance"""
@@ -94,39 +97,39 @@ def analyze_frame_shape(frame_path):
         img = cv2.imread(frame_path, cv2.IMREAD_GRAYSCALE)
         if img is None:
             return "Unknown"
-        
+
         # Get image dimensions
         height, width = img.shape
-        
+
         # Calculate aspect ratio
         aspect_ratio = width / height if height > 0 else 0
-        
+
         # Create a mask to analyze frame shape
         _, binary = cv2.threshold(img, 240, 255, cv2.THRESH_BINARY_INV)
-        
+
         # Find contours
         contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
+
         if not contours:
             return "Unknown"
-        
+
         # Get the largest contour (main frame)
         largest_contour = max(contours, key=cv2.contourArea)
-        
+
         # Get bounding rectangle
         x, y, w, h = cv2.boundingRect(largest_contour)
-        
+
         # Calculate frame properties
         frame_aspect_ratio = w / h if h > 0 else 0
         area = cv2.contourArea(largest_contour)
         perimeter = cv2.arcLength(largest_contour, True)
-        
+
         # Circularity calculation
         if perimeter > 0:
             circularity = 4 * np.pi * area / (perimeter * perimeter)
         else:
             circularity = 0
-        
+
         # Shape classification based on properties
         if circularity > 0.8:
             return "Round"
@@ -138,7 +141,7 @@ def analyze_frame_shape(frame_path):
             return "Square"
         else:
             return "Geometric"
-            
+
     except Exception as e:
         print(f"Error analyzing frame {frame_path}: {e}")
         return "Unknown"
@@ -148,17 +151,17 @@ def get_all_frame_shapes(frames_folder):
     Analyze all frames in the folder and return their shapes
     """
     frame_shapes = {}
-    
+
     if not os.path.exists(frames_folder):
         return frame_shapes
-    
+
     for filename in os.listdir(frames_folder):
         if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
             frame_path = os.path.join(frames_folder, filename)
             shape = analyze_frame_shape(frame_path)
             frame_shapes[filename] = shape
             print(f"Frame: {filename} → Shape: {shape}")
-    
+
     return frame_shapes
 
 # Analyze frames at startup
@@ -176,7 +179,7 @@ def get_available_frames():
             if file.lower().endswith(('.png', '.jpg', '.jpeg')):
                 frame_name = os.path.splitext(file)[0].replace('_', ' ').title()
                 frame_shape = frame_shapes_map.get(file, "Unknown")
-                
+
                 frames.append({
                     'filename': file,
                     'path': os.path.join(frames_folder, file),
@@ -189,20 +192,20 @@ def get_recommended_frames(face_shape):
     """Get recommended ACTUAL frame files based on face shape"""
     recommended_shapes = FACE_SHAPE_RECOMMENDATIONS.get(face_shape, [])
     all_frames = get_available_frames()
-    
+
     recommended_frames = []
-    
+
     # First, try exact shape matches
     for frame in all_frames:
         if frame['shape'] in recommended_shapes:
             recommended_frames.append(frame)
-    
+
     # If not enough matches, include similar shapes
     if len(recommended_frames) < 3:
         for frame in all_frames:
             if frame not in recommended_frames and frame['shape'] != "Unknown":
                 recommended_frames.append(frame)
-    
+
     # Limit to top 5 recommendations
     return recommended_frames[:5]
 
@@ -230,15 +233,15 @@ def calculate_face_features(landmarks):
     """Original face features calculation that matches the trained model (9 features)"""
     # Landmark indices
     idx = {
-        'forehead': 10, 
-        'chin': 152, 
+        'forehead': 10,
+        'chin': 152,
         'left_cheek': 234,
-        'right_cheek': 454, 
-        'left_eye': 33, 
-        'right_eye': 263, 
+        'right_cheek': 454,
+        'left_eye': 33,
+        'right_eye': 263,
         'nose_tip': 1
     }
-    
+
     # Extract landmark coordinates
     lm = {}
     for name, i in idx.items():
@@ -247,7 +250,7 @@ def calculate_face_features(landmarks):
         else:
             # Fallback to default coordinates if index out of range
             lm[name] = [0.5, 0.5, 0]
-    
+
     features = [
         distance_3d(lm['forehead'], lm['chin']),           # 1. Face height
         distance_3d(lm['left_cheek'], lm['right_cheek']),  # 2. Face width
@@ -292,7 +295,7 @@ class FaceShapeAnalyzer:
         self.analysis_complete = False
         self.shape_history = []
         self.optimal_distance_count = 0
-        
+
     def start_analysis(self):
         """Start the 3-second analysis period"""
         self.analysis_start_time = time.time()
@@ -301,31 +304,31 @@ class FaceShapeAnalyzer:
         self.shape_history = []
         self.optimal_distance_count = 0
         print("Starting face shape analysis...")
-        
+
     def update_analysis(self, shape, distance_status):
         """Update analysis with current shape and distance status"""
         current_time = time.time()
-        
+
         if self.analysis_start_time is None:
             return None
-            
+
         elapsed = current_time - self.analysis_start_time
         remaining = max(0, self.analysis_duration - elapsed)
-        
+
         # Only count shapes when at optimal distance
         if distance_status == "optimal":
             self.optimal_distance_count += 1
             self.shape_history.append(shape)
-            
+
             # Calculate stability
             if len(self.shape_history) > 5:
                 recent_shapes = self.shape_history[-5:]
                 most_common = max(set(recent_shapes), key=recent_shapes.count)
                 confidence = recent_shapes.count(most_common) / len(recent_shapes)
-                
+
                 if confidence >= self.stability_threshold:
                     self.detected_shape = most_common
-        
+
         # Check if analysis period is complete
         if elapsed >= self.analysis_duration:
             if self.detected_shape and self.optimal_distance_count >= 10:
@@ -335,20 +338,20 @@ class FaceShapeAnalyzer:
             else:
                 # Not enough stable data, restart analysis
                 self.start_analysis()
-                
+
         return remaining
-    
+
     def get_analysis_progress(self):
         """Get current analysis progress"""
         if self.analysis_start_time is None:
             return 0, 0
-            
+
         elapsed = time.time() - self.analysis_start_time
         progress = min(100, (elapsed / self.analysis_duration) * 100)
         remaining = max(0, self.analysis_duration - elapsed)
-        
+
         return progress, remaining
-    
+
     def reset(self):
         """Reset the analyzer"""
         self.analysis_start_time = None
@@ -358,180 +361,36 @@ class FaceShapeAnalyzer:
         self.shape_history = []
         self.optimal_distance_count = 0
 
-# -------------------- NEW API ENDPOINTS FOR FLUTTER --------------------
+# -------------------- CLIENT CAMERA ENDPOINTS --------------------
 
-@app.route('/api/analyze_face', methods=['POST'])
-def api_analyze_face():
-    """API endpoint for face analysis from uploaded image"""
-    if 'file' not in request.files:
-        return jsonify({'success': False, 'error': 'No file provided'})
-    
-    file = request.files['file']
-    if file.filename == '' or not allowed_file(file.filename):
-        return jsonify({'success': False, 'error': 'Invalid file'})
-    
-    # Read uploaded file bytes (process in-memory)
-    try:
-        file_bytes = file.read()
-        nparr = np.frombuffer(file_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None:
-            return jsonify({'success': False, 'error': 'Could not decode image'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': f'Could not read uploaded image: {e}'})
-    
-    # Face detection and analysis
-    with mp_face_mesh.FaceMesh(
-        static_image_mode=True,
-        max_num_faces=1,
-        refine_landmarks=True,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5) as face_mesh:
-        
-        rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        results = face_mesh.process(rgb_image)
-
-        if not results.multi_face_landmarks:
-            return jsonify({'success': False, 'error': 'No face detected'})
-        
-        landmarks = results.multi_face_landmarks[0].landmark
-        landmarks_array = []
-        for lm in landmarks:
-            landmarks_array.append([lm.x, lm.y, lm.z])
-        landmarks_array = np.array(landmarks_array)
-        
-        # Get face shape
-        face_shape = "Unknown"
-        if face_shape_model is not None:
-            features = calculate_face_features(landmarks)
-            label = face_shape_model.predict([features])[0]
-            face_shape = get_face_shape_label(label)
-        
-        # Return analysis results
-        return jsonify({
-            'success': True,
-            'face_shape': face_shape,
-            'message': 'Face analysis completed'
-        })
-
-@app.route('/api/try_frame', methods=['POST'])
-def api_try_frame():
-    """API endpoint to try a frame on uploaded image"""
-    print(f"📥 API: Received try_frame request")
-    
-    if 'file' not in request.files or 'frame' not in request.form:
-        print("✗ API: Missing file or frame data")
-        return jsonify({'success': False, 'error': 'Missing file or frame data'})
-    
-    file = request.files['file']
-    frame_filename = request.form['frame']
-    size_key = request.form.get('size', 'medium')
-    
-    print(f"📥 API: Frame filename: {frame_filename}")
-    print(f"📥 API: Size: {size_key}")
-    print(f"📥 API: File: {file.filename}")
-    
-    if file.filename == '' or not allowed_file(file.filename):
-        print("✗ API: Invalid file")
-        return jsonify({'success': False, 'error': 'Invalid file'})
-    
-    # Read uploaded file bytes (process in-memory)
-    try:
-        file_bytes = file.read()
-        nparr = np.frombuffer(file_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None:
-            return jsonify({'success': False, 'error': 'Could not decode uploaded image'})
-        filename = secure_filename(file.filename)
-        print(f"✓ API: Received file (in-memory): {filename}")
-    except Exception as e:
-        return jsonify({'success': False, 'error': f'Could not read uploaded image: {e}'})
-
-    # Load selected frame
-    frame_path = os.path.join(app.config['FRAMES_FOLDER'], frame_filename)
-    print(f"📥 API: Loading frame from: {frame_path}")
-    
-    if not os.path.exists(frame_path):
-        print(f"✗ API: Frame file not found: {frame_path}")
-        return jsonify({'success': False, 'error': f'Frame file not found: {frame_filename}'})
-    
-    try:
-        selected_glasses = load_glasses(frame_path)
-        print(f"✓ API: Frame loaded successfully: {frame_filename}")
-    except Exception as e:
-        print(f"✗ API: Error loading frame: {str(e)}")
-        return jsonify({'success': False, 'error': f'Error loading frame: {str(e)}'})
-    
-    # 'img' already contains the decoded uploaded image (in-memory)
-    
-    # Face detection
-    with mp_face_mesh.FaceMesh(
-        static_image_mode=True,
-        max_num_faces=1,
-        refine_landmarks=True,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5) as face_mesh:
-        
-        rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        results = face_mesh.process(rgb_image)
-
-        if not results.multi_face_landmarks:
-            return jsonify({'success': False, 'error': 'No face detected'})
-        
-        landmarks = results.multi_face_landmarks[0].landmark
-        landmarks_array = []
-        for lm in landmarks:
-            landmarks_array.append([lm.x, lm.y, lm.z])
-        landmarks_array = np.array(landmarks_array)
-        
-        # Overlay glasses
-        scale_factor = FRAME_SIZES.get(size_key, FRAME_SIZES['medium'])['scale_factor']
-        print(f"📥 API: Applying frame with scale factor: {scale_factor}")
-        try:
-            overlayed_img = overlay_glasses_with_handles(
-                img.copy(), landmarks_array, selected_glasses, 
-                scale_factor=scale_factor
-            )
-            print(f"✓ API: Frame overlay successful (in-memory)")
-
-            # Encode overlayed image to base64 and return as data URI
-            _, buffer = cv2.imencode('.jpg', overlayed_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            encoded_image = base64.b64encode(buffer).decode('utf-8')
-            data_uri = f"data:image/jpeg;base64,{encoded_image}"
-
-            return jsonify({
-                'success': True,
-                'processed_image': data_uri,
-                'message': 'Frame applied successfully'
-            })
-        except Exception as e:
-            print(f"✗ API: Error applying frame: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return jsonify({'success': False, 'error': f'Error applying frame: {str(e)}'})
+@app.route('/client_camera')
+def client_camera():
+    """Client camera version - uses client's camera instead of server camera"""
+    frames = get_available_frames()
+    return render_template('client_camera.html', frames=frames, frame_sizes=FRAME_SIZES)
 
 @app.route('/api/process_frame', methods=['POST'])
 def api_process_frame():
-    """Process a single frame for real-time try-on"""
+    """Process a single frame from client camera for real-time try-on"""
     try:
         # Get frame data from request
         data = request.json
         if not data or 'image' not in data:
             return jsonify({'success': False, 'error': 'No image data'})
-        
+
         # Decode base64 image
         try:
             image_data = data['image'].split(',')[1]  # Remove data:image/jpeg;base64,
         except:
             image_data = data['image']  # If no prefix, use as is
-            
+
         image_bytes = base64.b64decode(image_data)
         nparr = np.frombuffer(image_bytes, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
+
         if frame is None:
             return jsonify({'success': False, 'error': 'Could not decode image'})
-        
+
         # Resize frame if too large for faster processing (max width 640px)
         height, width = frame.shape[:2]
         if width > 640:
@@ -540,11 +399,11 @@ def api_process_frame():
             new_height = int(height * scale)
             frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
             print(f"Resized frame from {width}x{height} to {new_width}x{new_height} for faster processing")
-        
+
         # Get frame and size from request
         frame_filename = data.get('frame', '')
         size_key = data.get('size', 'medium')
-        
+
         # Load selected glasses if frame is specified
         selected_glasses = None
         if frame_filename:
@@ -555,34 +414,34 @@ def api_process_frame():
             except Exception as e:
                 print(f"Error loading frame {frame_filename}: {e}")
                 return jsonify({'success': False, 'error': f'Error loading frame: {str(e)}'})
-        
+
         # Process frame with MediaPipe
         with mp_face_mesh.FaceMesh(
-            static_image_mode=False,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5) as face_mesh:
-            
+                static_image_mode=False,
+                max_num_faces=1,
+                refine_landmarks=True,
+                min_detection_confidence=0.5,
+                min_tracking_confidence=0.5) as face_mesh:
+
             # Flip frame horizontally for mirror effect
             frame = cv2.flip(frame, 1)
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = face_mesh.process(rgb_frame)
-            
+
             output_frame = frame.copy()
             face_shape = "Unknown"
             distance_message = "No face detected"
             distance_status = "unknown"
-            
+
             if results.multi_face_landmarks:
                 landmarks = results.multi_face_landmarks[0].landmark
-                
+
                 # Convert landmarks to array format
                 landmarks_array = []
                 for lm in landmarks:
                     landmarks_array.append([lm.x, lm.y, lm.z])
                 landmarks_array = np.array(landmarks_array)
-                
+
                 # Estimate distance
                 try:
                     distance = estimate_distance(landmarks_array)
@@ -591,7 +450,7 @@ def api_process_frame():
                     print(f"Distance estimation error: {e}")
                     distance_message = "Distance calculation failed"
                     distance_status = "error"
-                
+
                 # Detect face shape
                 if face_shape_model is not None:
                     try:
@@ -601,27 +460,27 @@ def api_process_frame():
                     except Exception as e:
                         print(f"Face shape prediction error: {e}")
                         face_shape = "Unknown"
-                
+
                 # Overlay glasses if available
                 if selected_glasses is not None:
                     scale_factor = FRAME_SIZES.get(size_key, FRAME_SIZES['medium'])['scale_factor']
                     try:
                         output_frame = overlay_glasses_with_handles(
-                            output_frame, landmarks_array, selected_glasses, 
+                            output_frame, landmarks_array, selected_glasses,
                             scale_factor=scale_factor
                         )
                         print(f"Successfully overlayed glasses: {frame_filename}")
                     except Exception as e:
                         print(f"Glasses overlay error: {e}")
-            
+
             # Flip back for output (normal orientation)
             output_frame = cv2.flip(output_frame, 1)
-            
+
             # Encode output frame to base64 with lower quality for faster transfer
-            _, buffer = cv2.imencode('.jpg', output_frame, [cv2.IMWRITE_JPEG_QUALITY, 70])  # Reduced from 80 to 70
+            _, buffer = cv2.imencode('.jpg', output_frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
             encoded_image = base64.b64encode(buffer).decode('utf-8')
             image_url = f"data:image/jpeg;base64,{encoded_image}"
-            
+
             return jsonify({
                 'success': True,
                 'processed_image': image_url,
@@ -629,11 +488,11 @@ def api_process_frame():
                 'distance_message': distance_message,
                 'distance_status': distance_status
             })
-            
+
     except Exception as e:
         print(f"Frame processing error: {e}")
         return jsonify({'success': False, 'error': str(e)})
-    
+
 @app.route('/api/start_realtime', methods=['POST'])
 def api_start_realtime():
     """Initialize real-time session"""
@@ -660,7 +519,163 @@ def api_get_recommendations(face_shape):
         'recommended_frames': recommended_frames
     })
 
-# -------------------- EXISTING ROUTES --------------------
+
+# -------------------- NEW API COMPATIBILITY ENDPOINTS --------------------
+@app.route('/api/analyze_face', methods=['POST'])
+def api_analyze_face():
+    """API endpoint to analyze an uploaded face image and return face shape (JSON)."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file uploaded'})
+
+        file = request.files['file']
+        if file.filename == '' or not allowed_file(file.filename):
+            return jsonify({'success': False, 'error': 'Invalid file'})
+
+        file_bytes = file.read()
+        nparr = np.frombuffer(file_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if img is None:
+            return jsonify({'success': False, 'error': 'Could not decode image'})
+
+        # Process image with MediaPipe Face Mesh (static mode)
+        with mp_face_mesh.FaceMesh(
+                static_image_mode=True,
+                max_num_faces=1,
+                refine_landmarks=True,
+                min_detection_confidence=0.5,
+                min_tracking_confidence=0.5) as face_mesh:
+
+            rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            results = face_mesh.process(rgb_image)
+
+            if not results.multi_face_landmarks:
+                return jsonify({'success': False, 'error': 'No face detected'})
+
+            landmarks = results.multi_face_landmarks[0].landmark
+            landmarks_array = []
+            for lm in landmarks:
+                landmarks_array.append([lm.x, lm.y, lm.z])
+            landmarks_array = np.array(landmarks_array)
+
+            if face_shape_model is None:
+                return jsonify({'success': False, 'error': 'Face shape model not available'})
+
+            try:
+                features = calculate_face_features(landmarks)
+                label = face_shape_model.predict([features])[0]
+                face_shape = get_face_shape_label(label)
+            except Exception as e:
+                return jsonify({'success': False, 'error': f'Prediction error: {e}'})
+
+            return jsonify({'success': True, 'face_shape': face_shape})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/try_frame', methods=['POST'])
+def api_try_frame():
+    """API endpoint compatible with the Flutter client: accepts multipart file + fields and returns JSON with processed image (data URI) and metadata."""
+    try:
+        # Validate file
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file uploaded'})
+
+        file = request.files['file']
+        if file.filename == '' or not allowed_file(file.filename):
+            return jsonify({'success': False, 'error': 'Invalid file'})
+
+        # Read image into memory
+        file_bytes = file.read()
+        nparr = np.frombuffer(file_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if img is None:
+            return jsonify({'success': False, 'error': 'Could not decode image'})
+
+        frame_filename = request.form.get('frame', '')
+        size_key = request.form.get('size', 'medium')
+
+        # Load selected glasses if provided
+        selected_glasses = None
+        if frame_filename:
+            frame_path = os.path.join(app.config['FRAMES_FOLDER'], frame_filename)
+            try:
+                selected_glasses = load_glasses(frame_path)
+            except Exception as e:
+                return jsonify({'success': False, 'error': f'Error loading frame: {e}'})
+
+        # Use MediaPipe to detect landmarks (static image mode)
+        with mp_face_mesh.FaceMesh(
+                static_image_mode=True,
+                max_num_faces=1,
+                refine_landmarks=True,
+                min_detection_confidence=0.5,
+                min_tracking_confidence=0.5) as face_mesh:
+
+            rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            results = face_mesh.process(rgb_image)
+
+            output_img = img.copy()
+            face_shape = 'Unknown'
+            distance_message = 'No face detected'
+            distance_status = 'unknown'
+
+            if results.multi_face_landmarks:
+                landmarks = results.multi_face_landmarks[0].landmark
+                landmarks_array = []
+                for lm in landmarks:
+                    landmarks_array.append([lm.x, lm.y, lm.z])
+                landmarks_array = np.array(landmarks_array)
+
+                # Estimate distance
+                try:
+                    distance = estimate_distance(landmarks_array)
+                    distance_status, distance_message = get_distance_status(distance)
+                except Exception as e:
+                    distance_message = 'Distance calc failed'
+                    distance_status = 'error'
+
+                # Predict face shape
+                if face_shape_model is not None:
+                    try:
+                        features = calculate_face_features(landmarks)
+                        label = face_shape_model.predict([features])[0]
+                        face_shape = get_face_shape_label(label)
+                    except Exception as e:
+                        face_shape = 'Unknown'
+
+                # Overlay glasses if provided
+                if selected_glasses is not None:
+                    scale_factor = FRAME_SIZES.get(size_key, FRAME_SIZES['medium'])['scale_factor']
+                    try:
+                        output_img = overlay_glasses_with_handles(
+                            output_img, landmarks_array, selected_glasses,
+                            scale_factor=scale_factor
+                        )
+                    except Exception:
+                        pass
+
+            # Encode resulting image to base64 data URI
+            _, buffer = cv2.imencode('.jpg', output_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            encoded_image = base64.b64encode(buffer).decode('utf-8')
+            image_data_uri = f"data:image/jpeg;base64,{encoded_image}"
+
+            return jsonify({
+                'success': True,
+                'processed_image': image_data_uri,
+                'face_shape': face_shape,
+                'distance_message': distance_message,
+                'distance_status': distance_status,
+                'message': 'Frame processed successfully'
+            })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+# -------------------- EXISTING ROUTES (KEPT FOR COMPATIBILITY) --------------------
 
 @app.route('/')
 def index():
@@ -681,11 +696,11 @@ def upload_file():
     error = None
     recommended_frames = []
     frames = get_available_frames()
-    
+
     # Safe default selection
     selected_frame = ''
     selected_size = 'medium'
-    
+
     if frames:
         selected_frame = request.form.get('frame_select', frames[0]['filename'])
         selected_size = request.form.get('size_select', 'medium')
@@ -705,15 +720,15 @@ def upload_file():
                     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                     if img is None:
                         error = "Could not decode the uploaded image"
-                        return render_template('upload.html', face_shape=face_shape, file_url=file_url, 
-                                             error=error, frames=frames, selected_frame=selected_frame,
-                                             frame_sizes=FRAME_SIZES, selected_size=selected_size)
+                        return render_template('upload.html', face_shape=face_shape, file_url=file_url,
+                                               error=error, frames=frames, selected_frame=selected_frame,
+                                               frame_sizes=FRAME_SIZES, selected_size=selected_size)
                     filename = secure_filename(file.filename)
                 except Exception as e:
                     error = f"Could not read uploaded image: {e}"
-                    return render_template('upload.html', face_shape=face_shape, file_url=file_url, 
-                                         error=error, frames=frames, selected_frame=selected_frame,
-                                         frame_sizes=FRAME_SIZES, selected_size=selected_size)
+                    return render_template('upload.html', face_shape=face_shape, file_url=file_url,
+                                           error=error, frames=frames, selected_frame=selected_frame,
+                                           frame_sizes=FRAME_SIZES, selected_size=selected_size)
 
                 # Load selected glasses
                 selected_frame_path = os.path.join(app.config['FRAMES_FOLDER'], selected_frame)
@@ -721,38 +736,38 @@ def upload_file():
                     selected_glasses = load_glasses(selected_frame_path)
                 except Exception as e:
                     error = f"Error loading selected frame: {str(e)}"
-                    return render_template('upload.html', face_shape=face_shape, file_url=file_url, 
-                                         error=error, frames=frames, selected_frame=selected_frame,
-                                         frame_sizes=FRAME_SIZES, selected_size=selected_size)
+                    return render_template('upload.html', face_shape=face_shape, file_url=file_url,
+                                           error=error, frames=frames, selected_frame=selected_frame,
+                                           frame_sizes=FRAME_SIZES, selected_size=selected_size)
 
                 # 'img' already contains the decoded uploaded image (in-memory)
                 # ensure it's present
                 if 'img' not in locals() or img is None:
                     error = "Could not read the uploaded image"
-                    return render_template('upload.html', face_shape=face_shape, file_url=file_url, 
-                                         error=error, frames=frames, selected_frame=selected_frame,
-                                         frame_sizes=FRAME_SIZES, selected_size=selected_size)
-                
+                    return render_template('upload.html', face_shape=face_shape, file_url=file_url,
+                                           error=error, frames=frames, selected_frame=selected_frame,
+                                           frame_sizes=FRAME_SIZES, selected_size=selected_size)
+
                 # Process image with MediaPipe Face Mesh
                 with mp_face_mesh.FaceMesh(
-                    static_image_mode=True,
-                    max_num_faces=1,
-                    refine_landmarks=True,
-                    min_detection_confidence=0.5,
-                    min_tracking_confidence=0.5) as face_mesh:
-                    
+                        static_image_mode=True,
+                        max_num_faces=1,
+                        refine_landmarks=True,
+                        min_detection_confidence=0.5,
+                        min_tracking_confidence=0.5) as face_mesh:
+
                     rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                     results = face_mesh.process(rgb_image)
 
                     if results.multi_face_landmarks:
                         landmarks = results.multi_face_landmarks[0].landmark
-                        
+
                         # Convert landmarks to array format
                         landmarks_array = []
                         for lm in landmarks:
                             landmarks_array.append([lm.x, lm.y, lm.z])
                         landmarks_array = np.array(landmarks_array)
-                        
+
                         if face_shape_model is not None:
                             features = calculate_face_features(landmarks)
                             label = face_shape_model.predict([features])[0]
@@ -763,10 +778,10 @@ def upload_file():
 
                             # Get scale factor for selected size
                             scale_factor = FRAME_SIZES[selected_size]['scale_factor']
-                            
+
                             # Overlay glasses
                             overlayed_img = overlay_glasses_with_handles(
-                                img.copy(), landmarks_array, selected_glasses, 
+                                img.copy(), landmarks_array, selected_glasses,
                                 scale_factor=scale_factor
                             )
                             # Encode overlay to base64 data URI for immediate display (no disk write)
@@ -778,13 +793,14 @@ def upload_file():
                     else:
                         error = "No face detected"
 
-    return render_template('upload.html', face_shape=face_shape, file_url=file_url, 
-                         error=error, frames=frames, selected_frame=selected_frame,
-                         frame_sizes=FRAME_SIZES, selected_size=selected_size,
-                         recommended_frames=recommended_frames)
+    return render_template('upload.html', face_shape=face_shape, file_url=file_url,
+                           error=error, frames=frames, selected_frame=selected_frame,
+                           frame_sizes=FRAME_SIZES, selected_size=selected_size,
+                           recommended_frames=recommended_frames)
 
 @app.route('/real_time')
 def real_time():
+    """Legacy real-time page (uses server camera)"""
     frames = get_available_frames()
     return render_template('real_time.html', frames=frames, frame_sizes=FRAME_SIZES)
 
@@ -793,14 +809,14 @@ def get_face_shape_recommendations():
     """API endpoint to get frame recommendations based on detected face shape"""
     data = request.json
     face_shape = data.get('face_shape')
-    
+
     if not face_shape:
         return jsonify({'success': False, 'error': 'No face shape provided'})
-    
+
     recommended_frames = get_recommended_frames(face_shape)
-    
+
     return jsonify({
-        'success': True, 
+        'success': True,
         'face_shape': face_shape,
         'recommended_frames': recommended_frames
     })
@@ -840,12 +856,15 @@ def frame_image(filename):
     """Serve original frame images from frames folder"""
     return send_from_directory(app.config['FRAMES_FOLDER'], filename)
 
+# -------------------- Legacy Server Camera (Optional - Can be removed) --------------------
+
 @app.route('/video_feed')
 def video_feed():
+    """Legacy server camera feed (optional)"""
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-# -------------------- Real-time Video --------------------
 def generate_frames():
+    """Legacy server camera frame generator"""
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("Error: Could not open camera")
@@ -883,7 +902,7 @@ def generate_frames():
                 landmarks_array.append([lm.x, lm.y, lm.z])
             landmarks_array = np.array(landmarks_array)
 
-            # Overlay glasses - NO TEXT, JUST THE GLASSES
+            # Overlay glasses
             global current_glasses, current_frame_size
             if current_glasses is not None:
                 scale_factor = FRAME_SIZES.get(current_frame_size, FRAME_SIZES['medium'])['scale_factor']
@@ -895,7 +914,7 @@ def generate_frames():
                 except Exception as e:
                     print(f"Overlay error: {e}")
 
-        # Convert to JPEG for streaming - NO TEXT ADDED
+        # Convert to JPEG for streaming
         ret, buffer = cv2.imencode('.jpg', display_frame)
         if not ret:
             continue
@@ -916,4 +935,9 @@ if __name__ == '__main__':
     print("Starting Flask application...")
     print(f"Optimal distance range: {OPTIMAL_DISTANCE_MIN}-{OPTIMAL_DISTANCE_MAX} cm")
     print(f"Target analysis distance: {TARGET_DISTANCE} cm")
-    app.run(debug=True, host='0.0.0.0', port=5000)  # Added host and port for mobile access
+    print("Available routes:")
+    print("  /              - Home page")
+    print("  /client_camera - Client camera try-on (RECOMMENDED)")
+    print("  /real_time     - Legacy server camera try-on")
+    print("  /upload        - Upload image for try-on")
+    app.run(debug=True, host='0.0.0.0', port=5000)
