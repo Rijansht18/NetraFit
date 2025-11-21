@@ -1,18 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:camera/camera.dart';
-import 'package:netrafit_glasses/screens/home_screen.dart';
+import 'package:provider/provider.dart';
+import 'screens/home_screen.dart';
+import 'screens/main_try_on_screen.dart'; // Add this
+import 'screens/recommendation_screen.dart';
+import 'providers/frame_provider.dart';
 
-List<CameraDescription> cameras = [];
-
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  try {
-    cameras = await availableCameras();
-  } on CameraException catch (e) {
-    print('Camera Error: $e');
-  }
-
+void main() {
   runApp(const MyApp());
 }
 
@@ -21,15 +14,19 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Netrafit - Face Shape & Glasses Try-On',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => FrameProvider()),
+      ],
+      child: MaterialApp(
+        title: 'Virtual Frame Try-On',
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          useMaterial3: true,
+        ),
+        home: const HomeScreen(),
+        debugShowCheckedModeBanner: false,
       ),
-      home: const HomeScreen(),
-      debugShowCheckedModeBanner: false,
     );
   }
 }

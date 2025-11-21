@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Real-Time Virtual Try-On</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .content { display: flex; gap: 30px; }
+        .video-section { flex: 2; }
+        .controls-section { flex: 1; background: #f8f9fa; padding: 20px; border-radius: 8px; }
+        .video-feed { width: 100%; border: 2px solid #ddd; border-radius: 8px; background: #000; }
+        .control-group { margin-bottom: 25px; }
+        .control-group h3 { margin-bottom: 15px; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 5px; }
+        .frame-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .frame-option { border: 2px solid #ddd; border-radius: 8px; padding: 10px; text-align: center; cursor: pointer; transition: all 0.3s; background: white; }
+        .frame-option:hover { border-color: #007bff; transform: translateY(-2px); }
+        .frame-option.selected { border-color: #007bff; background: #e3f2fd; }
+        .frame-option img { width: 100%; height: 60px; object-fit: contain; margin-bottom: 5px; }
+        .frame-name { font-size: 12px; font-weight: bold; color: #333; }
+        .frame-shape { font-size: 10px; color: #666; }
+        .size-options { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .size-option { padding: 12px; border: 2px solid #ddd; border-radius: 6px; cursor: pointer; text-align: center; transition: all 0.3s; background: white; }
+        .size-option:hover { border-color: #28a745; }
+        .size-option.selected { border-color: #28a745; background: #d4edda; }
+        .distance-guide { margin: 15px 0; padding: 15px; background: #e8f4fd; border-radius: 8px; border-left: 4px solid #007bff; }
+        .status { padding: 12px; background: #e9ecef; border-radius: 5px; margin-top: 20px; font-size: 14px; min-height: 60px; }
+        .btn { display: block; width: 100%; padding: 12px; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 10px; transition: all 0.3s; }
+        .btn-primary { background: #007bff; }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-success { background: #28a745; }
+        .btn-success:hover { background: #218838; }
+        .btn-secondary { background: #6c757d; }
+        .btn-secondary:hover { background: #545b62; }
+        .recommendations-section { display: none; margin-top: 20px; padding: 15px; background: #e8f5e8; border-radius: 8px; border-left: 4px solid #28a745; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Real-Time Glass Frame Try-On</h1>
+            <p>See how different frames look on you in real-time with AI face shape analysis!</p>
+        </div>
+        
+        <div class="content">
+            <div class="video-section">
+                <img id="videoFeed" class="video-feed" src="{{ url_for('video_feed') }}" alt="Live Video Feed">
+            </div>
+            
+            <div class="controls-section">
+                <div class="control-group">
+                    <h3>🕶️ Select Frame Style</h3>
+                    <div class="frame-options">
+                        {% for frame in frames %}
+                            <div class="frame-option {% if loop.first %}selected{% endif %}" 
+                                 data-frame="{{ frame.filename }}">
+                                <img src="{{ url_for('frame_image', filename=frame.filename) }}" 
+                                     alt="{{ frame.name }}"
+                                     onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjYwIiB2aWV3Qm94PSIwIDAgMTAwIDYwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodD0iNjAiIGZpbGw9IiNlZWVlZWUiLz48dGV4dCB4PSI1MCIgeT0iMzAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxMiIgZmlsbD0iIzk5OTk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSI+R2xhc3NlczwvdGV4dD48L3N2Zz4='">
+                                <div class="frame-name">{{ frame.name }}</div>
+                                <div class="frame-shape">{{ frame.shape }}</div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="distance-guide">
+                    <h4>📏 Distance Guide</h4>
+                    <p style="margin: 5px 0; font-size: 14px; color: #333;">
+                        <strong>For accurate face shape detection:</strong>
+                    </p>
+                    <ul style="margin: 5px 0; padding-left: 20px; font-size: 13px; color: #555;">
+                        <li>Position yourself <strong>40-70 cm</strong> from camera</li>
+                        <li>Face directly towards camera</li>
+                        <li>Ensure good lighting</li>
+                        <li>Keep face centered in frame</li>
+                    </ul>
+                    <p style="margin: 5px 0; font-size: 12px; color: #666;">
+        The system will guide you with color-coded messages:
+    </p>
+    <div style="display: flex; gap: 10px; margin-top: 8px;">
+        <div style="display: flex; align-items: center;">
+            <div style="width: 12px; height: 12px; background: #28a745; border-radius: 2px; margin-right: 5px;"></div>
+            <span style="font-size: 12px;">Optimal</span>
+        </div>
+        <div style="display: flex; align-items: center;">
+            <div style="width: 12px; height: 12px; background: #fd7e14; border-radius: 2px; margin-right: 5px;"></div>
+            <span style="font-size: 12px;">Too Close</span>
+        </div>
+        <div style="display: flex; align-items: center;">
+            <div style="width: 12px; height: 12px; background: #dc3545; border-radius: 2px; margin-right: 5px;"></div>
+            <span style="font-size: 12px;">Too Far</span>
+        </div>
+    </div>
+                </div>
+                
+                <div class="control-group">
+                    <h3>📏 Select Frame Size</h3>
+                    <div class="size-options">
+                        {% for size_key, size_info in frame_sizes.items() %}
+                            <div class="size-option {% if size_key == 'medium' %}selected{% endif %}" 
+                                 data-size="{{ size_key }}">
+                                {{ size_info.label }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="status" id="status">
+                    <strong>Ready!</strong><br>
+                    Select a frame and position yourself 40-70cm from camera.
+                    Face shape analysis will start automatically.
+                </div>
+
+                <button class="btn btn-success" id="getRecommendationsBtn" style="display: none;">
+                    🎯 Get Frame Recommendations
+                </button>
+
+                <div class="recommendations-section" id="recommendationsSection">
+                    <h3>💡 Recommended Frames for <span id="detectedFaceShape"></span> Face</h3>
+                    <div class="frame-options" id="recommendedFrames">
+                        <!-- Recommended frames will be loaded here -->
+                    </div>
+                </div>
+                
+                <button class="btn btn-secondary" onclick="location.href='{{ url_for('index') }}'">
+                    ← Back to Home
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentFrame = '{{ frames[0].filename if frames else "" }}';
+        let currentSize = 'medium';
+        let detectedFaceShape = null;
+        
+        // Frame selection
+        document.querySelectorAll('.frame-option').forEach(option => {
+            option.addEventListener('click', function() {
+                const frame = this.dataset.frame;
+                
+                // Update UI
+                document.querySelectorAll('.frame-option').forEach(opt => opt.classList.remove('selected'));
+                this.classList.add('selected');
+                
+                // Update status
+                document.getElementById('status').innerHTML = `<strong>Loading...</strong><br>${this.querySelector('.frame-name').textContent}`;
+                
+                // Send request
+                changeFrame(frame, currentSize);
+                
+                currentFrame = frame;
+            });
+        });
+        
+        // Size selection
+        document.querySelectorAll('.size-option').forEach(option => {
+            option.addEventListener('click', function() {
+                const size = this.dataset.size;
+                
+                // Update UI
+                document.querySelectorAll('.size-option').forEach(opt => opt.classList.remove('selected'));
+                this.classList.add('selected');
+                
+                // Update status
+                document.getElementById('status').innerHTML = `<strong>Changing size...</strong><br>${this.textContent} size selected`;
+                
+                // Send request
+                changeFrame(currentFrame, size);
+                
+                currentSize = size;
+            });
+        });
+        
+        // Get recommendations button
+        document.getElementById('getRecommendationsBtn').addEventListener('click', function() {
+            if (!detectedFaceShape) {
+                alert('Please wait for face shape analysis to complete first.');
+                return;
+            }
+            
+            getFrameRecommendations(detectedFaceShape);
+        });
+        
+        function changeFrame(frame, size) {
+            fetch('{{ url_for("change_frame") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    frame: frame,
+                    size: size
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('status').innerHTML = `<strong>Success!</strong><br>Frame loaded successfully`;
+                } else {
+                    document.getElementById('status').innerHTML = `<strong>Error:</strong><br>${data.error}`;
+                    console.error('Error changing frame:', data.error);
+                }
+            })
+            .catch(error => {
+                document.getElementById('status').innerHTML = `<strong>Network Error:</strong><br>${error}`;
+                console.error('Error:', error);
+            });
+        }
+        
+        function getFrameRecommendations(faceShape) {
+            document.getElementById('status').innerHTML = `<strong>Analyzing...</strong><br>Finding perfect frames for ${faceShape} face`;
+            
+            fetch('{{ url_for("get_face_shape_recommendations") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    face_shape: faceShape
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displayRecommendedFrames(data.face_shape, data.recommended_frames);
+                    document.getElementById('status').innerHTML = 
+                        `<strong>Success!</strong><br>Found ${data.recommended_frames.length} recommended frames for ${data.face_shape} face`;
+                } else {
+                    document.getElementById('status').innerHTML = 
+                        `<strong>Error:</strong><br>${data.error}`;
+                }
+            })
+            .catch(error => {
+                document.getElementById('status').innerHTML = 
+                    `<strong>Network Error:</strong><br>${error}`;
+            });
+        }
+        
+        function displayRecommendedFrames(faceShape, recommendedFrames) {
+            const recommendationsSection = document.getElementById('recommendationsSection');
+            const detectedFaceShapeSpan = document.getElementById('detectedFaceShape');
+            const recommendedFramesDiv = document.getElementById('recommendedFrames');
+            
+            detectedFaceShapeSpan.textContent = faceShape;
+            recommendedFramesDiv.innerHTML = '';
+            
+            if (recommendedFrames.length === 0) {
+                recommendedFramesDiv.innerHTML = '<p>No recommendations found. Try different frames manually.</p>';
+                recommendationsSection.style.display = 'block';
+                return;
+            }
+            
+            recommendedFrames.forEach(frame => {
+                const frameOption = document.createElement('div');
+                frameOption.className = 'frame-option';
+                frameOption.dataset.frame = frame.filename;
+                frameOption.innerHTML = `
+                    <img src="{{ url_for('frame_image', filename='') }}${frame.filename}" 
+                         alt="${frame.name}"
+                         onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjYwIiB2aWV3Qm94PSIwIDAgMTAwIDYwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodD0iNjAiIGZpbGw9IiNlZWVlZWUiLz48dGV4dCB4PSI1MCIgeT0iMzAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxMiIgZmlsbD0iIzk5OTk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSI+R2xhc3NlczwvdGV4dD48L3N2Zz4='">
+                    <div class="frame-name">${frame.name}</div>
+                    <div class="frame-shape">${frame.shape}</div>
+                `;
+                
+                frameOption.addEventListener('click', function() {
+                    document.querySelectorAll('.frame-option').forEach(opt => opt.classList.remove('selected'));
+                    this.classList.add('selected');
+                    changeFrame(frame.filename, currentSize);
+                    document.getElementById('status').innerHTML = `<strong>Selected:</strong><br>${frame.name} (${frame.shape})`;
+                });
+                
+                recommendedFramesDiv.appendChild(frameOption);
+            });
+            
+            recommendationsSection.style.display = 'block';
+        }
+        
+        // Simulate face shape detection (in real implementation, this would come from the video feed)
+        // For demo purposes, we'll simulate detection after 8 seconds
+        setTimeout(() => {
+            // Simulate different face shapes for demo
+            const shapes = ["Heart", "Oval", "Round", "Square"];
+            const randomShape = shapes[Math.floor(Math.random() * shapes.length)];
+            
+            detectedFaceShape = randomShape;
+            document.getElementById('getRecommendationsBtn').style.display = 'block';
+            document.getElementById('status').innerHTML = 
+                `<strong>Face Shape Detected!</strong><br>Your face shape: <span style="color: #28a745;">${detectedFaceShape}</span><br>Click "Get Recommendations" for perfect frames!`;
+        }, 8000);
+        
+        // Auto-reconnect video feed on error
+        const videoFeed = document.getElementById('videoFeed');
+        videoFeed.onerror = function() {
+            console.log('Video feed error, reconnecting...');
+            setTimeout(() => {
+                videoFeed.src = '{{ url_for('video_feed') }}?t=' + new Date().getTime();
+            }, 1000);
+        };
+
+        // Periodic status update simulation
+        setInterval(() => {
+            if (!detectedFaceShape && Math.random() < 0.3) {
+                const messages = [
+                    "Position yourself 40-70cm from camera...",
+                    "Ensure good lighting on your face...",
+                    "Keep your face steady for analysis...",
+                    "Looking for facial features..."
+                ];
+                const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+                document.getElementById('status').innerHTML = `<strong>Analyzing...</strong><br>${randomMessage}`;
+            }
+        }, 3000);
+    </script>
+</body>
+</html>

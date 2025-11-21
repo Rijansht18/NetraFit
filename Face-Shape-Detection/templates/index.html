@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Virtual Glass Frame Try-On</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; text-align: center; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 30px; }
+        .nav-buttons { margin: 40px 0; }
+        .btn { display: inline-block; padding: 15px 30px; margin: 10px; 
+               background: #007bff; color: white; text-decoration: none; 
+               border-radius: 5px; font-size: 16px; font-weight: bold; transition: all 0.3s; }
+        .btn:hover { background: #0056b3; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        .btn-realtime { background: #28a745; }
+        .btn-realtime:hover { background: #218838; }
+        .available-frames { margin: 40px 0; text-align: left; }
+        .frame-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; margin-top: 20px; }
+        .frame-item { border: 1px solid #ddd; padding: 15px; border-radius: 8px; text-align: center; background: white; }
+        .frame-item img { width: 80px; height: 50px; object-fit: contain; margin-bottom: 8px; }
+        .frame-name { font-size: 12px; font-weight: bold; color: #333; }
+        .frame-shape { font-size: 10px; color: #666; margin-top: 5px; }
+        .instructions { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: left; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Virtual Glass Frame Try-On System</h1>
+        <p class="subtitle">Find your perfect glasses with AI-powered face shape analysis</p>
+        
+        <div class="nav-buttons">
+            <a href="{{ url_for('real_time') }}" class="btn btn-realtime">🎥 Real-Time Try-On</a>
+            <a href="{{ url_for('upload') }}" class="btn">📷 Upload Photo</a>
+        </div>
+        
+        <div class="available-frames">
+            <h2>Available Frames</h2>
+            <div class="frame-grid">
+                {% for frame in frames %}
+                    <div class="frame-item">
+                        <img src="{{ url_for('frame_image', filename=frame.filename) }}"  
+                             alt="{{ frame.name }}"
+                             onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iNTAiIHZpZXdCb3g9IjAgMCA4MCA1MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODAiIGhlaWdodD0iNTAiIGZpbGw9IiNlZWVlZWUiLz48dGV4dCB4PSI0MCIgeT0iMjUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxMCIgZmlsbD0iIzk5OTk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSI+R2xhc3NlczwvdGV4dD48L3N2Zz4='">
+                        <div class="frame-name">{{ frame.name }}</div>
+                        <div class="frame-shape">{{ frame.shape }}</div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="instructions">
+            <h3>How It Works:</h3>
+            <ul>
+                <li><strong>Real-Time Try-On:</strong> Use your webcam to try glasses instantly with automatic face shape detection</li>
+                <li><strong>Upload Photo:</strong> Upload a photo to try different frames and get personalized recommendations</li>
+                <li><strong>AI-Powered:</strong> Our system analyzes your face shape and recommends the perfect frames for you</li>
+            </ul>
+            <p><strong>For Best Results:</strong> Ensure good lighting and face the camera directly.</p>
+        </div>
+    </div>
+</body>
+</html>

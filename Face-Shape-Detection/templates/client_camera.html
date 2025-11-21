@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Client Camera Try-On</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: black;
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+      }
+      .container {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+      #videoElement {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        /* Remove CSS mirror transform: we'll handle mirroring explicitly when drawing to canvas
+               to ensure consistent behavior across browsers and WebView implementations. */
+      }
+      #processedImage {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: none;
+      }
+      .camera-fallback {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(45deg, #333, #666);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        flex-direction: column;
+        text-align: center;
+        padding: 20px;
+      }
+      .solution-list {
+        text-align: left;
+        margin: 20px 0;
+        background: rgba(255, 255, 255, 0.1);
+        padding: 15px;
+        border-radius: 10px;
+      }
+      .solution-item {
+        margin: 10px 0;
+        padding: 8px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 5px;
+      }
+      .button-group {
+        display: flex;
+        gap: 10px;
+        margin: 15px 0;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      button {
+        padding: 12px 20px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button.secondary {
+        background: #6c757d;
+      }
+      button.secondary:hover {
+        background: #545b62;
+      }
+      .url-button {
+        background: #28a745;
+      }
+      .url-button:hover {
+        background: #218838;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <video id="videoElement" autoplay playsinline></video>
+      <img id="processedImage" alt="Processed Frame" />
+
+      <!-- Camera fallback message -->
+      <div class="camera-fallback" id="cameraFallback" style="display: none">
+        <h2>📷 Camera Access Required</h2>
+        <p id="fallbackMessage" style="font-size: 16px; margin: 10px 0"></p>
+
+        <div class="solution-list">
+          <h3>Quick Solutions:</h3>
+          <div class="solution-item">
+            <strong>Option 1: Use Localhost</strong><br />
+            <span style="font-size: 12px"
+              >Try accessing via localhost instead of IP</span
+            >
+          </div>
+          <div class="solution-item">
+            <strong>Option 2: Enable Insecure Content</strong><br />
+            <span style="font-size: 12px"
+              >Allow camera on HTTP for development</span
+            >
+          </div>
+          <div class="solution-item">
+            <strong>Option 3: Use HTTPS</strong><br />
+            <span style="font-size: 12px"
+              >Set up SSL certificate for HTTPS</span
+            >
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button id="retryButton">🔄 Retry Camera Access</button>
+          <button id="localhostButton" class="url-button">
+            🔗 Open Localhost
+          </button>
+          <button id="enableInsecureButton" class="secondary">
+            ⚙️ Enable Insecure Camera
+          </button>
+        </div>
+
+        <div style="margin-top: 20px; font-size: 12px; color: #ccc">
+          <p>
+            <strong>Development Note:</strong> Modern browsers block camera
+            access on HTTP sites.<br />
+            For testing, use the solutions above or set up HTTPS.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let currentFrame = "";
+      let currentSize = "medium";
+      let isProcessing = false;
+      let videoStream = null;
+      let processingInterval = null;
+      let errorCount = 0;
+      const MAX_ERROR_COUNT = 5;
+
+      // DOM elements
+      const videoElement = document.getElementById("videoElement");
+      const processedImage = document.getElementById("processedImage");
+      const cameraFallback = document.getElementById("cameraFallback");
+      const fallbackMessage = document.getElementById("fallbackMessage");
+      const retryButton = document.getElementById("retryButton");
+      const localhostButton = document.getElementById("localhostButton");
+      const enableInsecureButton = document.getElementById(
+        "enableInsecureButton"
+      );
+
+      // Check browser support and environment
+      function checkCameraSupport() {
+        // Check if browser supports mediaDevices
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          showCameraError(
+            "Your browser does not support camera access. " +
+              "Please use Chrome, Firefox, or Edge (latest versions)."
+          );
+          return false;
+        }
+
+        // With HTTPS, we should be good to go!
+        const isSecureContext = window.isSecureContext;
+        const isHttps = window.location.protocol === "https:";
+
+        console.log("Security context:", {
+          isSecureContext,
+          isHttps,
+          hostname: window.location.hostname,
+          protocol: window.location.protocol,
+        });
+
+        if (!isSecureContext) {
+          showCameraError(
+            "Camera access requires a secure context. " +
+              "Current context is not secure despite HTTPS."
+          );
+          return false;
+        }
+
+        return true;
+      }
+
+      function showCameraError(message) {
+        cameraFallback.style.display = "flex";
+        fallbackMessage.textContent = message;
+
+        // Log detailed info for debugging
+        console.error("Camera access failed:", {
+          userAgent: navigator.userAgent,
+          isSecureContext: window.isSecureContext,
+          hostname: window.location.hostname,
+          protocol: window.location.protocol,
+          mediaDevices: !!navigator.mediaDevices,
+          getUserMedia: !!(
+            navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+          ),
+        });
+      }
+
+      function hideCameraError() {
+        cameraFallback.style.display = "none";
+      }
+
+      // Initialize camera with specific error handling
+      async function initializeCamera() {
+        if (!checkCameraSupport()) {
+          return;
+        }
+
+        try {
+          hideCameraError();
+
+          // Stop any existing stream
+          if (videoStream) {
+            videoStream.getTracks().forEach((track) => track.stop());
+          }
+
+          // Try different camera constraints
+          const constraints = {
+            video: {
+              facingMode: "user",
+              width: { ideal: 640 },
+              height: { ideal: 480 },
+              frameRate: { ideal: 30 },
+            },
+            audio: false,
+          };
+
+          videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+          videoElement.srcObject = videoStream;
+
+          // Set up video event handlers
+          videoElement.onloadedmetadata = () => {
+            console.log(
+              "Video ready - dimensions:",
+              videoElement.videoWidth,
+              "x",
+              videoElement.videoHeight
+            );
+          };
+
+          videoElement.onerror = (error) => {
+            console.error("Video element error:", error);
+          };
+        } catch (error) {
+          console.error("Camera access error:", error);
+          handleCameraError(error);
+        }
+      }
+
+      function handleCameraError(error) {
+        let errorMessage = "Camera error: " + error.message;
+        let detailedMessage = errorMessage;
+
+        switch (error.name) {
+          case "NotAllowedError":
+            errorMessage =
+              "Camera permission denied. Please allow camera access in your browser settings.";
+            detailedMessage = "Permission denied by user or browser policy.";
+            break;
+          case "NotFoundError":
+            errorMessage =
+              "No camera found. Please check if your camera is connected and not in use by another application.";
+            detailedMessage = "No camera devices found.";
+            break;
+          case "NotSupportedError":
+            errorMessage =
+              "Camera not supported in this browser or page is not secure.";
+            detailedMessage =
+              "Browser does not support camera API or insecure context.";
+            break;
+          case "NotReadableError":
+            errorMessage = "Camera is already in use by another application.";
+            detailedMessage = "Camera device is busy or locked.";
+            break;
+          case "OverconstrainedError":
+            errorMessage =
+              "Camera constraints cannot be satisfied. Trying different settings...";
+            detailedMessage = "Requested camera settings not available.";
+            // Try with simpler constraints
+            setTimeout(() => initializeCameraWithSimpleConstraints(), 1000);
+            return;
+          case "TypeError":
+            errorMessage = "Invalid camera constraints provided.";
+            detailedMessage = "Invalid constraints object.";
+            break;
+        }
+
+        showCameraError(errorMessage);
+      }
+
+      // Fallback with simpler constraints
+      async function initializeCameraWithSimpleConstraints() {
+        try {
+          videoStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+          videoElement.srcObject = videoStream;
+          hideCameraError();
+        } catch (fallbackError) {
+          handleCameraError(fallbackError);
+        }
+      }
+
+      // Process frames
+      function startFrameProcessing() {
+        if (processingInterval) {
+          clearInterval(processingInterval);
+        }
+
+        // Lower processing frequency and downscale frames for smoother performance
+        processingInterval = setInterval(async () => {
+          if (isProcessing || !currentFrame || !videoStream) return;
+
+          // Check if video is ready
+          if (
+            videoElement.readyState !== videoElement.HAVE_ENOUGH_DATA ||
+            videoElement.videoWidth === 0 ||
+            videoElement.videoHeight === 0
+          ) {
+            return;
+          }
+
+          isProcessing = true;
+
+          try {
+            // Capture frame from video
+            const canvas = document.createElement("canvas");
+            const context = canvas.getContext("2d");
+
+            // Downscale target for faster transfer and processing
+            const TARGET_WIDTH = 480; // adjust for quality/speed tradeoff
+            const aspect = videoElement.videoHeight / videoElement.videoWidth;
+            const targetWidth = Math.min(TARGET_WIDTH, videoElement.videoWidth);
+            const targetHeight = Math.round(targetWidth * aspect);
+
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+
+            // Mirror the drawn frame so the server sees a mirrored (user-facing) image.
+            // We do this here (instead of CSS) to ensure consistent pixels across WebView and Chrome.
+            context.save();
+            context.translate(canvas.width, 0);
+            context.scale(-1, 1);
+            context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+            context.restore();
+
+            // Convert to base64
+            // Compress to JPEG data URL for smaller payloads
+            const imageData = canvas.toDataURL("image/jpeg", 0.6);
+
+            // Send to server for processing
+            const response = await fetch("/api/process_frame", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                image: imageData,
+                frame: currentFrame,
+                size: currentSize,
+              }),
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+              errorCount = 0;
+              processedImage.src = result.processed_image;
+              processedImage.style.display = "block";
+            } else {
+              errorCount++;
+
+              if (errorCount >= MAX_ERROR_COUNT) {
+                stopFrameProcessing();
+              }
+            }
+          } catch (error) {
+            errorCount++;
+            console.error("Frame processing error:", error);
+
+            if (errorCount >= MAX_ERROR_COUNT) {
+              stopFrameProcessing();
+            }
+          } finally {
+            isProcessing = false;
+          }
+        }, 300); // 300ms interval (~3 FPS) — reduces CPU/network load and improves perceived smoothness
+      }
+
+      function stopFrameProcessing() {
+        if (processingInterval) {
+          clearInterval(processingInterval);
+          processingInterval = null;
+        }
+        processedImage.style.display = "none";
+      }
+
+      // Function to change frame (called from Flutter)
+      window.changeFrame = function (frameFilename, size = "medium") {
+        currentFrame = frameFilename;
+        currentSize = size;
+
+        if (currentFrame) {
+          errorCount = 0;
+
+          if (!processingInterval) {
+            startFrameProcessing();
+          }
+        } else {
+          stopFrameProcessing();
+        }
+      };
+
+      // Function to change size (called from Flutter)
+      window.changeSize = function (size) {
+        currentSize = size;
+      };
+
+      // Button event handlers
+      retryButton.addEventListener("click", initializeCamera);
+
+      localhostButton.addEventListener("click", function () {
+        const currentUrl = new URL(window.location.href);
+        currentUrl.hostname = "localhost";
+        window.location.href = currentUrl.toString();
+      });
+
+      enableInsecureButton.addEventListener("click", function () {
+        showInsecureCameraInstructions();
+      });
+
+      function showInsecureCameraInstructions() {
+        const instructions = `
+                <h3>Enable Camera on HTTP (Chrome)</h3>
+                <div class="solution-list">
+                    <div class="solution-item">
+                        <strong>Step 1:</strong> Copy this URL:<br>
+                        <code style="background: #333; padding: 5px; border-radius: 3px;">${window.location.href}</code>
+                    </div>
+                    <div class="solution-item">
+                        <strong>Step 2:</strong> Open Chrome and paste this URL in address bar:
+                        <code style="background: #333; padding: 5px; border-radius: 3px;">chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>
+                    </div>
+                    <div class="solution-item">
+                        <strong>Step 3:</strong> Enable the flag and add your URL:<br>
+                        Add: <code style="background: #333; padding: 2px 5px; border-radius: 3px;">${window.location.origin}</code>
+                    </div>
+                    <div class="solution-item">
+                        <strong>Step 4:</strong> Relaunch Chrome and try again
+                    </div>
+                </div>
+                <button onclick="initializeCamera()" style="margin-top: 15px;">Try Again After Enabling</button>
+            `;
+
+        fallbackMessage.innerHTML = instructions;
+      }
+
+      // Initialize when page loads
+      document.addEventListener("DOMContentLoaded", function () {
+        // Add a small delay to ensure everything is loaded
+        setTimeout(initializeCamera, 100);
+      });
+
+      // Clean up
+      window.addEventListener("beforeunload", () => {
+        stopFrameProcessing();
+        if (videoStream) {
+          videoStream.getTracks().forEach((track) => track.stop());
+        }
+      });
+
+      // Handle page visibility changes
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          stopFrameProcessing();
+        } else if (currentFrame) {
+          startFrameProcessing();
+        }
+      });
+
+      // Log environment info for debugging
+      console.log("Camera Test Environment:", {
+        userAgent: navigator.userAgent,
+        isSecureContext: window.isSecureContext,
+        hostname: window.location.hostname,
+        protocol: window.location.protocol,
+        mediaDevices: !!navigator.mediaDevices,
+        getUserMedia: !!(
+          navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+        ),
+        url: window.location.href,
+      });
+    </script>
+  </body>
+</html>
