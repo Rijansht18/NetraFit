@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import '../core/config/api_config.dart';
 import '../models/frame_model.dart';
 
 class ApiService {
-  static const String baseUrl = 'https://violetlike-onward-marley.ngrok-free.dev'; // Change to your computer's IP
+  static const String baseUrl = '${ApiUrl.baseUrl}'; // Change to your computer's IP
 
   // Get all available frames
   static Future<List<Frame>> getFrames() async {

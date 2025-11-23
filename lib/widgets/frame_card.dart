@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/config/api_config.dart';
 import '../models/frame_model.dart';
 
 class FrameCard extends StatelessWidget {
@@ -42,7 +43,7 @@ class FrameCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                   image: DecorationImage(
                     image: NetworkImage(
-                      'https://violetlike-onward-marley.ngrok-free.dev/frame_image/${frame.filename}',
+                      '${ApiUrl.baseUrl}/frame_image/${frame.filename}',
                     ),
                     fit: BoxFit.contain,
                     onError: (exception, stackTrace) {

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../core/config/api_config.dart';
 import '../providers/frame_provider.dart';
 import '../widgets/frame_card.dart';
 
@@ -204,7 +205,7 @@ class _TryOnScreenState extends State<TryOnScreen> {
   void _loadUrlWithRetry({int retryCount = 0}) {
     const maxRetries = 2;
 
-    final url = 'https://violetlike-onward-marley.ngrok-free.dev/client_camera';
+    final url = '${ApiUrl.baseUrl}/client_camera';
     print('Loading URL: $url (attempt ${retryCount + 1})');
 
     _webViewController.loadRequest(Uri.parse(url)).then((_) {
@@ -230,8 +231,8 @@ class _TryOnScreenState extends State<TryOnScreen> {
 
   void _tryAlternativeUrls() {
     final urls = [
-      'https://violetlike-onward-marley.ngrok-free.dev/client_camera',
-      'http://violetlike-onward-marley.ngrok-free.dev/client_camera',
+      '${ApiUrl.baseUrl}/client_camera',
+      '${ApiUrl.baseUrl}/client_camera',
     ];
 
     print('Trying alternative URLs...');

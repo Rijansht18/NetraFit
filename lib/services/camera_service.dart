@@ -5,8 +5,10 @@ import 'package:camera/camera.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 
+import '../core/config/api_config.dart';
+
 class CameraService {
-  static const String baseUrl = 'https://violetlike-onward-marley.ngrok-free.dev'; // Change to your computer's IP
+  static const String baseUrl = '${ApiUrl.baseUrl}'; // Change to your computer's IP
 
   CameraController? _controller;
   bool _isInitialized = false;
