@@ -1,32 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'screens/home_screen.dart';
-import 'screens/main_try_on_screen.dart'; // Add this
-import 'screens/recommendation_screen.dart';
-import 'providers/frame_provider.dart';
+import 'package:netrafit/routes.dart';
+import 'package:netrafit/screens/home_screen.dart';
+import 'core/themes/app_theme.dart';
+import 'screens/onboarding/onboarding_screen.dart';
 
 void main() {
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (context) => FrameProvider()),
-      ],
-      child: MaterialApp(
-        title: 'Virtual Frame Try-On',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          useMaterial3: true,
-        ),
-        home: const HomeScreen(),
-        debugShowCheckedModeBanner: false,
-      ),
+    return MaterialApp(
+      title: 'Virtual Try-On',
+      theme: AppTheme.lightTheme,
+      debugShowCheckedModeBanner: false,
+      initialRoute: AppRoute.onboardingroute,
+      routes: AppRoute.getAppRoutes(),
     );
   }
 }
