@@ -9,7 +9,7 @@ class AppRoute {
   static const String loginpageroute = '/login';
   static const String registerpageroute = '/register';
   static const String homeroute = '/home';
-  static const String onboardingroute = '/home';
+  static const String onboardingroute = '/onboard';
 
   static Map<String, WidgetBuilder> getAppRoutes() {
     return {

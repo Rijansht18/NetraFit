@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:netrafit/routes.dart';
+
+import '../../models/api_response.dart';
+import '../../models/user_model.dart';
+import '../../services/auth_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
@@ -15,6 +20,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _addressController = TextEditingController();
+  final _mobileController = TextEditingController(); // Added mobile field
   bool _agreeToTerms = false;
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -25,26 +31,91 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String _passwordText = '';
   String _confirmPasswordText = '';
 
+  final AuthService _authService = AuthService();
+
   void _register() async {
-    if (_formKey.currentState!.validate()) {
+    if (_formKey.currentState!.validate() && _agreeToTerms) {
       setState(() {
         _isLoading = true;
       });
 
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 2));
+      try {
+        // Create user model
+        final user = UserModel(
+          username: _usernameController.text.trim(),
+          fullname: _fullNameController.text.trim(),
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+          mobile: _mobileController.text.trim(),
+          address: _addressController.text.trim(),
+        );
 
-      setState(() {
-        _isLoading = false;
-      });
+        // Call API
+        final ApiResponse response = await _authService.register(user);
 
-      // Navigate to home after successful registration
-      // Navigator.pushReplacementNamed(context, '/home');
+        setState(() {
+          _isLoading = false;
+        });
+
+        if (response.success) {
+          // Registration successful
+          _showSuccessDialog('Registration successful! Please login.');
+        } else {
+          // Registration failed
+          _showErrorDialog(response.error ?? 'Registration failed');
+        }
+      } catch (e) {
+        setState(() {
+          _isLoading = false;
+        });
+        _showErrorDialog('An unexpected error occurred: $e');
+      }
     }
   }
 
+  void _showSuccessDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Registration Successful'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _goToLogin();
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Registration Failed'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _goToLogin() {
-    Navigator.pushReplacementNamed(context, '/login');
+    Navigator.pushReplacementNamed(context, AppRoute.loginpageroute);
   }
 
   void _togglePasswordVisibility() {
@@ -155,6 +226,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
     if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
       return 'Please enter a valid email address';
+    }
+    return null;
+  }
+
+  // Mobile validator
+  String? _mobileValidator(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your mobile number';
+    }
+    // Basic mobile validation - adjust as needed
+    if (value.length < 10) {
+      return 'Please enter a valid mobile number';
     }
     return null;
   }
@@ -284,6 +367,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
                   validator: _emailValidator,
+                ),
+
+                const SizedBox(height: 16),
+
+                // Mobile Field (Required by backend)
+                const Text(
+                  "Mobile Number",
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _mobileController,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    hintText: "Enter mobile number",
+                    hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Colors.grey),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFF275BCD)),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  validator: _mobileValidator,
                 ),
 
                 const SizedBox(height: 16),
@@ -467,9 +581,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                 const SizedBox(height: 16),
 
-                // Address Field (Optional)
+                // Address Field
                 const Text(
-                  "Address (Optional)",
+                  "Address",
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -492,6 +606,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your address';
+                    }
+                    return null;
+                  },
                 ),
 
                 const SizedBox(height: 20),
@@ -731,6 +851,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _addressController.dispose();
+    _mobileController.dispose(); // Don't forget to dispose mobile controller
     super.dispose();
   }
 }

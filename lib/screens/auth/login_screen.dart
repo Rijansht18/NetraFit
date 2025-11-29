@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../models/api_response.dart';
+import '../../routes.dart';
+import '../../services/auth_service.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
 
@@ -9,11 +13,13 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _identifierController = TextEditingController(); // Changed from _emailController
   final _passwordController = TextEditingController();
   bool _rememberMe = false;
   bool _isLoading = false;
   bool _obscurePassword = true;
+
+  final AuthService _authService = AuthService();
 
   void _login() async {
     if (_formKey.currentState!.validate()) {
@@ -21,26 +27,181 @@ class _LoginScreenState extends State<LoginScreen> {
         _isLoading = true;
       });
 
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 2));
+      try {
+        print('=== LOGIN SCREEN ===');
+        print('Identifier: ${_identifierController.text}');
+        print('Password: ${_passwordController.text}');
+
+        // Call API
+        final ApiResponse response = await _authService.login(
+          _identifierController.text.trim(),
+          _passwordController.text,
+        );
+
+        setState(() {
+          _isLoading = false;
+        });
+
+        // SUCCESS HANDLING
+        if (response.success == true && response.data?['token'] != null) {
+          // Store the token for future use (you'll want to implement secure storage)
+          final String token = response.data!['token'];
+          print('Login successful! Token: $token');
+
+          Navigator.pushReplacementNamed(context, AppRoute.homeroute);
+        } else {
+          // FAILURE HANDLING - Use the error message from backend
+          final errorMessage = response.error ?? 'Login failed. Please check your credentials.';
+          _showErrorDialog(errorMessage);
+        }
+      } catch (e) {
+        setState(() {
+          _isLoading = false;
+        });
+        print('=== LOGIN SCREEN ERROR ===');
+        print('Exception: $e');
+        _showErrorDialog('An unexpected error occurred. Please try again.');
+      }
+    }
+  }
+
+  void _navigateToHome() {
+
+      Navigator.pushReplacementNamed(context, AppRoute.homeroute);
+  }
+
+  void _showSuccessDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 24),
+              SizedBox(width: 8),
+              Text('Success!', style: TextStyle(color: Colors.green)),
+            ],
+          ),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _navigateToHome();
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.error_outline, color: Colors.red, size: 24),
+              SizedBox(width: 8),
+              Text('Login Failed'),
+            ],
+          ),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _handleForgotPassword() async {
+    if (_identifierController.text.isEmpty) {
+      _showErrorDialog('Please enter your email or username first.');
+      return;
+    }
+
+    final identifier = _identifierController.text.trim();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Reset Password'),
+          content: Text('Send password reset instructions to $identifier?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _sendPasswordReset(identifier);
+              },
+              child: const Text('Send'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _sendPasswordReset(String identifier) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final ApiResponse response = await _authService.forgotPassword(identifier);
 
       setState(() {
         _isLoading = false;
       });
 
-      // Navigate to home after successful login
-      // Navigator.pushReplacementNamed(context, '/home');
+      if (response.success == true) {
+        _showSuccessDialog(
+            response.data?['message'] ?? 'Password reset instructions sent to your email.'
+        );
+      } else {
+        _showErrorDialog(
+            response.error ?? 'Failed to send reset instructions. Please try again.'
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      _showErrorDialog('Network error. Please check your connection.');
     }
   }
 
   void _goToRegister() {
-    Navigator.pushReplacementNamed(context, '/register');
+    Navigator.pushReplacementNamed(context, AppRoute.registerpageroute);
   }
 
   void _togglePasswordVisibility() {
     setState(() {
       _obscurePassword = !_obscurePassword;
     });
+  }
+
+  // Validator for identifier (email or username)
+  String? _identifierValidator(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your email or username';
+    }
+    return null;
   }
 
   @override
@@ -90,9 +251,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Email Field
+                      // Email/Username Field
                       const Text(
-                        "Email Address",
+                        "Email or Username", // Updated label
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
@@ -101,10 +262,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
+                        controller: _identifierController, // Updated controller
+                        keyboardType: TextInputType.text,
                         decoration: InputDecoration(
-                          hintText: "john@gmail.com",
+                          hintText: "Enter email or username", // Updated hint
                           hintStyle: const TextStyle(color: Colors.grey),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -117,18 +278,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           filled: true,
                           fillColor: Colors.grey[50],
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                          prefixIcon: Icon(Icons.email,color: Colors.black,),
-
+                          prefixIcon: Icon(Icons.person, color: Colors.black), // Updated icon
                         ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter your email';
-                          }
-                          if (!value.contains('@')) {
-                            return 'Please enter a valid email';
-                          }
-                          return null;
-                        },
+                        validator: _identifierValidator, // Updated validator
                       ),
 
                       const SizedBox(height: 16),
@@ -204,9 +356,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ],
                           ),
                           GestureDetector(
-                            onTap: () {
-                              // Forgot password logic
-                            },
+                            onTap: _handleForgotPassword,
                             child: const Text(
                               "Forgot Password?",
                               style: TextStyle(
@@ -362,7 +512,6 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Using Icon widget directly
             _getSocialIcon(text),
             const SizedBox(width: 12),
             Text(
@@ -382,7 +531,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Icon _getSocialIcon(String text) {
     if (text.contains("Google")) {
       return const Icon(
-        Icons.g_mobiledata, // Google icon
+        Icons.g_mobiledata,
         size: 24,
         color: Colors.black,
       );
@@ -394,17 +543,17 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } else if (text.contains("Facebook")) {
       return const Icon(
-        Icons.facebook_outlined,
-        size: 24,
-        color: Colors.black
+          Icons.facebook_outlined,
+          size: 24,
+          color: Colors.black
       );
     }
-    return const Icon(Icons.question_mark); // Fallback icon
+    return const Icon(Icons.question_mark);
   }
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _identifierController.dispose(); // Updated controller
     _passwordController.dispose();
     super.dispose();
   }
