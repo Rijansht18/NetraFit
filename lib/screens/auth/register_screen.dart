@@ -591,11 +591,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 // Social Buttons
                 Column(
                   children: [
-                    _buildSocialButton("G", "Continue with Google", Colors.black),
+                    _buildSocialButton(
+                      text: "Continue with Google",
+                      textColor: Colors.black,
+                    ),
                     const SizedBox(height: 12),
-                    _buildSocialButton("🍎", "Continue with Apple", Colors.black),
+                    _buildSocialButton(
+                      text: "Continue with Apple",
+                      textColor: Colors.black,
+                    ),
                     const SizedBox(height: 12),
-                    _buildSocialButton("f", "Continue with Facebook", Colors.blue),
+                    _buildSocialButton(
+                      text: "Continue with Facebook",
+                      textColor: Colors.black,
+                    ),
                   ],
                 ),
 
@@ -658,7 +667,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  Widget _buildSocialButton(String icon, String text, Color color) {
+  Widget _buildSocialButton({required String text, required Color textColor}) {
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton(
@@ -666,30 +675,52 @@ class _RegisterScreenState extends State<RegisterScreen> {
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(12),
           ),
-          side: const BorderSide(color: Colors.grey),
+          side: BorderSide(color: Colors.grey.shade300),
+          backgroundColor: Colors.white,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              icon,
-              style: const TextStyle(fontSize: 16),
-            ),
+            // Using Icon widget directly
+            _getSocialIcon(text),
             const SizedBox(width: 12),
             Text(
               text,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 16,
                 fontWeight: FontWeight.w500,
-                color: color,
+                color: textColor,
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Icon _getSocialIcon(String text) {
+    if (text.contains("Google")) {
+      return const Icon(
+        Icons.g_mobiledata, // Google icon
+        size: 24,
+        color: Colors.black,
+      );
+    } else if (text.contains("Apple")) {
+      return const Icon(
+        Icons.apple,
+        size: 24,
+        color: Colors.black,
+      );
+    } else if (text.contains("Facebook")) {
+      return const Icon(
+          Icons.facebook_outlined,
+          size: 24,
+          color: Colors.black
+      );
+    }
+    return const Icon(Icons.question_mark); // Fallback icon
   }
 
   @override
