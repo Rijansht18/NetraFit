@@ -1,17 +1,17 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:netrafit/core/config/api_config.dart';
-
 import '../models/api_response.dart';
 import '../models/user_model.dart';
 
 class AuthService {
-  static const String baseUrl = ApiUrl.baseBackendUrl; // Replace with your actual backend URL
+  static const String baseUrl = ApiUrl.baseBackendUrl; // Your IP
 
   final http.Client client;
 
   AuthService({http.Client? client}) : client = client ?? http.Client();
 
+  // Register method
   Future<ApiResponse> register(UserModel user) async {
     try {
       print('=== REGISTER API CALL ===');
@@ -31,22 +31,16 @@ class AuthService {
 
       final Map<String, dynamic> responseData = json.decode(response.body);
 
-      // Handle different success scenarios
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // If backend returns success: true
         if (responseData['success'] == true) {
           return ApiResponse.fromJson(responseData);
-        }
-        // If backend returns user data directly (without success field)
-        else if (responseData['_id'] != null || responseData['user'] != null) {
+        } else if (responseData['_id'] != null || responseData['user'] != null) {
           return ApiResponse(
             success: true,
             data: responseData,
             error: null,
           );
-        }
-        // If backend returns message only
-        else if (responseData['message'] != null) {
+        } else if (responseData['message'] != null) {
           return ApiResponse(
             success: true,
             data: responseData,
@@ -55,7 +49,6 @@ class AuthService {
         }
       }
 
-      // If we reach here, treat as failure
       return ApiResponse.fromJson(responseData);
 
     } catch (e) {
@@ -68,7 +61,7 @@ class AuthService {
     }
   }
 
-  // Login method - updated for your backend
+  // Login method
   Future<ApiResponse> login(String identifier, String password) async {
     try {
       print('=== LOGIN API CALL ===');
@@ -81,7 +74,7 @@ class AuthService {
           'Content-Type': 'application/json',
         },
         body: json.encode({
-          'identifier': identifier, // Can be email or username
+          'identifier': identifier,
           'password': password,
         }),
       ).timeout(const Duration(seconds: 10));
@@ -91,18 +84,14 @@ class AuthService {
 
       final Map<String, dynamic> responseData = json.decode(response.body);
 
-      // Handle success scenarios for your backend
       if (response.statusCode == 200) {
-        // Your backend returns {message: "Login Successful", token: "jwt_token"}
         if (responseData['token'] != null) {
           return ApiResponse(
             success: true,
             data: responseData,
             error: null,
           );
-        }
-        // If backend returns success with token
-        else if (responseData['message']?.contains('Successful') == true) {
+        } else if (responseData['message']?.contains('Successful') == true) {
           return ApiResponse(
             success: true,
             data: responseData,
@@ -111,7 +100,6 @@ class AuthService {
         }
       }
 
-      // Handle error responses from your backend
       if (responseData['error'] != null) {
         return ApiResponse(
           success: false,
@@ -120,7 +108,6 @@ class AuthService {
         );
       }
 
-      // Default failure
       return ApiResponse(
         success: false,
         error: 'Login failed',
@@ -137,16 +124,54 @@ class AuthService {
     }
   }
 
-  // Forgot password method (optional)
-  Future<ApiResponse> forgotPassword(String email) async {
+  // Get user profile
+  Future<ApiResponse> getUserProfile(String token) async {
+    try {
+      print('=== GET USER PROFILE ===');
+
+      final response = await client.get(
+        Uri.parse('$baseUrl/users/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      print('Profile Response Status: ${response.statusCode}');
+      print('Profile Response Body: ${response.body}');
+
+      final Map<String, dynamic> responseData = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return ApiResponse(
+          success: true,
+          data: responseData,
+          error: null,
+        );
+      }
+
+      return ApiResponse.fromJson(responseData);
+
+    } catch (e) {
+      print('=== GET PROFILE ERROR ===');
+      print('Error: $e');
+      return ApiResponse(
+        success: false,
+        error: 'Failed to get user profile: ${e.toString()}',
+      );
+    }
+  }
+
+  // Forgot password method
+  Future<ApiResponse> forgotPassword(String identifier) async {
     try {
       final response = await client.post(
-        Uri.parse('$baseUrl/users/forgot-password'), // Adjust endpoint
+        Uri.parse('$baseUrl/users/forgot-password'),
         headers: {
           'Content-Type': 'application/json',
         },
         body: json.encode({
-          'email': email,
+          'identifier': identifier,
         }),
       ).timeout(const Duration(seconds: 10));
 

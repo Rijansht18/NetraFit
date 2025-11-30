@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-
+import 'package:provider/provider.dart';
 import '../../models/api_response.dart';
 import '../../routes.dart';
 import '../../services/auth_service.dart';
+import '../../providers/auth_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -13,13 +14,10 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _identifierController = TextEditingController(); // Changed from _emailController
+  final _identifierController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _rememberMe = false;
   bool _isLoading = false;
   bool _obscurePassword = true;
-
-  final AuthService _authService = AuthService();
 
   void _login() async {
     if (_formKey.currentState!.validate()) {
@@ -30,28 +28,26 @@ class _LoginScreenState extends State<LoginScreen> {
       try {
         print('=== LOGIN SCREEN ===');
         print('Identifier: ${_identifierController.text}');
-        print('Password: ${_passwordController.text}');
 
-        // Call API
-        final ApiResponse response = await _authService.login(
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final rememberMe = authProvider.rememberMe;
+
+        // Call API through AuthProvider
+        final success = await authProvider.login(
           _identifierController.text.trim(),
           _passwordController.text,
+          rememberMe,
         );
 
         setState(() {
           _isLoading = false;
         });
 
-        // SUCCESS HANDLING
-        if (response.success == true && response.data?['token'] != null) {
-          // Store the token for future use (you'll want to implement secure storage)
-          final String token = response.data!['token'];
-          print('Login successful! Token: $token');
-
-          Navigator.pushReplacementNamed(context, AppRoute.homeroute);
+        if (success) {
+          // Navigate based on user role
+          _navigateBasedOnRole(authProvider);
         } else {
-          // FAILURE HANDLING - Use the error message from backend
-          final errorMessage = response.error ?? 'Login failed. Please check your credentials.';
+          final errorMessage = 'Login failed. Please check your credentials.';
           _showErrorDialog(errorMessage);
         }
       } catch (e) {
@@ -65,36 +61,16 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _navigateToHome() {
-
+  void _navigateBasedOnRole(AuthProvider authProvider) {
+    if (authProvider.isAdmin) {
+      // Navigate to admin screen
+      print('Navigating to ADMIN dashboard - User: ${authProvider.user?.username}');
+      Navigator.pushReplacementNamed(context, AppRoute.adminDashboardRoute);
+    } else {
+      // Navigate to customer home screen
+      print('Navigating to CUSTOMER home - User: ${authProvider.user?.username}');
       Navigator.pushReplacementNamed(context, AppRoute.homeroute);
-  }
-
-  void _showSuccessDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green, size: 24),
-              SizedBox(width: 8),
-              Text('Success!', style: TextStyle(color: Colors.green)),
-            ],
-          ),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _navigateToHome();
-              },
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
+    }
   }
 
   void _showErrorDialog(String message) {
@@ -163,15 +139,30 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final ApiResponse response = await _authService.forgotPassword(identifier);
+      final AuthService authService = AuthService();
+      final ApiResponse response = await authService.forgotPassword(identifier);
 
       setState(() {
         _isLoading = false;
       });
 
       if (response.success == true) {
-        _showSuccessDialog(
-            response.data?['message'] ?? 'Password reset instructions sent to your email.'
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text('Success'),
+              content: Text(response.data?['message'] ?? 'Password reset instructions sent to your email.'),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
         );
       } else {
         _showErrorDialog(
@@ -196,7 +187,6 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  // Validator for identifier (email or username)
   String? _identifierValidator(String? value) {
     if (value == null || value.isEmpty) {
       return 'Please enter your email or username';
@@ -206,6 +196,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+
     return Scaffold(
       backgroundColor: Color(0xFFF5F8FF),
       body: SafeArea(
@@ -253,7 +245,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       // Email/Username Field
                       const Text(
-                        "Email or Username", // Updated label
+                        "Email or Username",
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
@@ -262,10 +254,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
-                        controller: _identifierController, // Updated controller
+                        controller: _identifierController,
                         keyboardType: TextInputType.text,
                         decoration: InputDecoration(
-                          hintText: "Enter email or username", // Updated hint
+                          hintText: "Enter email or username",
                           hintStyle: const TextStyle(color: Colors.grey),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -278,9 +270,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           filled: true,
                           fillColor: Colors.grey[50],
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                          prefixIcon: Icon(Icons.person, color: Colors.black), // Updated icon
+                          prefixIcon: Icon(Icons.person, color: Colors.black),
                         ),
-                        validator: _identifierValidator, // Updated validator
+                        validator: _identifierValidator,
                       ),
 
                       const SizedBox(height: 16),
@@ -338,11 +330,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           Row(
                             children: [
                               Checkbox(
-                                value: _rememberMe,
+                                value: authProvider.rememberMe,
                                 onChanged: (value) {
-                                  setState(() {
-                                    _rememberMe = value!;
-                                  });
+                                  authProvider.setRememberMe(value!);
                                 },
                                 activeColor: const Color(0xFF275BCD),
                               ),
@@ -553,7 +543,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _identifierController.dispose(); // Updated controller
+    _identifierController.dispose();
     _passwordController.dispose();
     super.dispose();
   }

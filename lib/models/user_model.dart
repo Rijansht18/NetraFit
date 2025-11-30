@@ -65,4 +65,40 @@ class UserModel {
       'address': address,
     };
   }
+
+  // Helper methods for role checking
+  bool get isAdmin => role == 'ADMIN';
+  bool get isCustomer => role == 'CUSTOMER';
+
+  // Storage methods
+  Map<String, dynamic> toStorageJson() {
+    return {
+      'id': id,
+      'username': username,
+      'fullname': fullname,
+      'email': email,
+      'role': role,
+      'mobile': mobile,
+      'address': address,
+      'status': status,
+      'profilePhoto': profilePhoto,
+      'createdAt': createdAt?.toIso8601String(),
+    };
+  }
+
+  factory UserModel.fromStorageJson(Map<String, dynamic> json) {
+    return UserModel(
+      id: json['id'],
+      username: json['username'],
+      fullname: json['fullname'],
+      email: json['email'],
+      password: '', // Don't store password
+      role: json['role'] ?? 'CUSTOMER',
+      mobile: json['mobile'] ?? '',
+      address: json['address'] ?? '',
+      status: json['status'],
+      profilePhoto: json['profilePhoto'],
+      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
+    );
+  }
 }
