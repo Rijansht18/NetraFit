@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../../core/config/api_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../routes.dart';
 import 'user_management_screen.dart';
 import 'add_user_screen.dart';
+import 'main_category_management_screen.dart';
 import '../../services/admin_service.dart';
 import '../../models/api_response.dart';
 import '../../models/user_model.dart';
@@ -20,10 +24,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<UserModel> _users = [];
   bool _isLoading = true;
 
+  Map<String, String> _systemStatus = {
+    'server': 'Checking...',
+    'database': 'Checking...',
+    'api': 'Checking...',
+    'security': 'Checking...',
+  };
+
   @override
   void initState() {
     super.initState();
     _loadDashboardData();
+    _checkSystemStatus();
   }
 
   Future<void> _loadDashboardData() async {
@@ -47,6 +59,85 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     } finally {
       setState(() {
         _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _checkSystemStatus() async {
+    await _checkServerStatus();
+    await _checkDatabaseStatus();
+    await _checkApiStatus();
+    await _checkSecurityStatus();
+  }
+
+  Future<void> _checkServerStatus() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiUrl.baseBackendUrl}/users/allUsers'),
+      ).timeout(const Duration(seconds: 5));
+
+      setState(() {
+        _systemStatus['server'] = response.statusCode == 200 ? 'Online' : 'Issues';
+      });
+    } catch (e) {
+      setState(() {
+        _systemStatus['server'] = 'Offline';
+      });
+    }
+  }
+
+  Future<void> _checkDatabaseStatus() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiUrl.baseBackendUrl}/users/allUsers'),
+      ).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          _systemStatus['database'] = data['users'] != null ? 'Connected' : 'Error';
+        });
+      } else {
+        setState(() {
+          _systemStatus['database'] = 'Error';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _systemStatus['database'] = 'Disconnected';
+      });
+    }
+  }
+
+  Future<void> _checkApiStatus() async {
+    try {
+      // Check Backend API
+      final backendResponse = await http.get(
+        Uri.parse('${ApiUrl.baseBackendUrl}/users/allUsers'),
+      ).timeout(const Duration(seconds: 5));
+
+      setState(() {
+        _systemStatus['api'] = backendResponse.statusCode == 200 ? 'Running' : 'Down';
+      });
+    } catch (e) {
+      setState(() {
+        _systemStatus['api'] = 'Down';
+      });
+    }
+  }
+
+  Future<void> _checkSecurityStatus() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiUrl.baseBackendUrl}/users/allUsers'),
+      ).timeout(const Duration(seconds: 5));
+
+      setState(() {
+        _systemStatus['security'] = response.statusCode == 200 ? 'Active' : 'Inactive';
+      });
+    } catch (e) {
+      setState(() {
+        _systemStatus['security'] = 'Inactive';
       });
     }
   }
@@ -89,6 +180,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int get _pendingOrders => 23;
   int get _lowStockProducts => 12;
 
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'Online':
+      case 'Connected':
+      case 'Running':
+      case 'Active':
+        return Colors.green;
+      case 'Checking...':
+        return Colors.orange;
+      case 'Partial':
+      case 'Issues':
+        return Colors.amber;
+      default:
+        return Colors.red;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -100,7 +208,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadDashboardData,
+            onPressed: () {
+              _loadDashboardData();
+              _checkSystemStatus();
+            },
           ),
           IconButton(
             icon: const Icon(Icons.logout),
@@ -119,7 +230,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Welcome Section - EXACTLY AS BEFORE
+              // Welcome Section
               Card(
                 elevation: 4,
                 child: Padding(
@@ -176,7 +287,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
               const SizedBox(height: 20),
 
-              // Quick Stats Grid - EXACTLY AS BEFORE but with real user data
+              // Quick Stats Grid
               const Text(
                 'Dashboard Overview',
                 style: TextStyle(
@@ -186,7 +297,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Stats Grid - Same cards but with real user data
+              // Stats Grid
               GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -196,42 +307,42 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 children: [
                   _buildStatCard(
                     'Total Users',
-                    _totalUsers.toString(), // REAL DATA
+                    _totalUsers.toString(),
                     Icons.people,
                     Colors.blue,
                     '+12% from last month',
                   ),
                   _buildStatCard(
                     'Total Products',
-                    _totalProducts.toString(), // Keep as static for now
+                    _totalProducts.toString(),
                     Icons.inventory,
                     Colors.green,
                     '+8% from last month',
                   ),
                   _buildStatCard(
                     'Total Orders',
-                    _totalOrders.toString(), // Keep as static for now
+                    _totalOrders.toString(),
                     Icons.shopping_cart,
                     Colors.orange,
                     '+23% from last month',
                   ),
                   _buildStatCard(
                     'Revenue',
-                    '\$${_revenue.toStringAsFixed(0)}', // Keep as static for now
+                    '\$${_revenue.toStringAsFixed(0)}',
                     Icons.attach_money,
                     Colors.purple,
                     '+15% from last month',
                   ),
                   _buildStatCard(
                     'Pending Orders',
-                    _pendingOrders.toString(), // Keep as static for now
+                    _pendingOrders.toString(),
                     Icons.pending_actions,
                     Colors.amber,
                     'Need attention',
                   ),
                   _buildStatCard(
                     'Low Stock',
-                    _lowStockProducts.toString(), // Keep as static for now
+                    _lowStockProducts.toString(),
                     Icons.warning,
                     Colors.red,
                     'Products need restock',
@@ -241,7 +352,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
               const SizedBox(height: 24),
 
-              // Recent Activity Section - EXACTLY AS BEFORE but with real user data
+              // Recent Activity Section
               const Text(
                 'Recent Activity',
                 style: TextStyle(
@@ -254,7 +365,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
               const SizedBox(height: 24),
 
-              // Quick Actions Section - EXACTLY AS BEFORE
+              // Quick Actions Section
               const Text(
                 'Quick Actions',
                 style: TextStyle(
@@ -267,7 +378,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
               const SizedBox(height: 24),
 
-              // Admin Features Grid - EXACTLY AS BEFORE
+              // Admin Features Grid
               const Text(
                 'Admin Features',
                 style: TextStyle(
@@ -298,43 +409,55 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     },
                   ),
                   _buildAdminCard(
-                    'Product Catalog',
-                    Icons.inventory,
+                    'Add New User',
+                    Icons.person_add,
                     Colors.green,
                         () {
-                      // Navigate to product management
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AddUserScreen(),
+                        ),
+                      ).then((_) {
+                        _loadDashboardData();
+                      });
+                    },
+                  ),
+                  _buildAdminCard(
+                    'Category Management',
+                    Icons.category,
+                    Colors.teal,
+                        () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const MainCategoryManagementScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildAdminCard(
+                    'Product Catalog',
+                    Icons.inventory,
+                    Colors.orange,
+                        () {
+                      _showComingSoonDialog('Product Catalog');
                     },
                   ),
                   _buildAdminCard(
                     'Order Management',
                     Icons.shopping_cart,
-                    Colors.orange,
+                    Colors.purple,
                         () {
-                      // Navigate to order management
+                      _showComingSoonDialog('Order Management');
                     },
                   ),
                   _buildAdminCard(
                     'Analytics',
                     Icons.analytics,
-                    Colors.purple,
-                        () {
-                      // Navigate to analytics
-                    },
-                  ),
-                  _buildAdminCard(
-                    'Settings',
-                    Icons.settings,
-                    Colors.grey,
-                        () {
-                      // Navigate to settings
-                    },
-                  ),
-                  _buildAdminCard(
-                    'Reports',
-                    Icons.assignment,
                     Colors.red,
                         () {
-                      // Navigate to reports
+                      _showComingSoonDialog('Analytics');
                     },
                   ),
                 ],
@@ -342,7 +465,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
               const SizedBox(height: 24),
 
-              // System Status Section - EXACTLY AS BEFORE
+              // System Status Section
               const Text(
                 'System Status',
                 style: TextStyle(
@@ -353,11 +476,35 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               const SizedBox(height: 16),
               _buildSystemStatus(),
 
-              const SizedBox(height: 40), // Extra padding at the bottom
+              const SizedBox(height: 40),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  void _showComingSoonDialog(String feature) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.build, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Coming Soon'),
+            ],
+          ),
+          content: Text('$feature feature is coming soon!'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -394,18 +541,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             const SizedBox(height: 8),
             Text(
               title,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
+                color: Colors.grey,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               subtitle,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 12,
-                color: Colors.grey[500],
+                color: Colors.grey,
               ),
             ),
           ],
@@ -415,7 +562,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildRecentActivity() {
-    // Use real user data for recent activities
+    // Get recent user registrations (last 5)
     final recentUsers = _users.take(5).toList();
 
     final List<Map<String, dynamic>> activities = [
@@ -423,11 +570,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         for (final user in recentUsers)
           {
             'icon': Icons.person_add,
-            'text': 'New user registered: ${user.username}',
+            'text': 'New user: ${user.username}',
             'time': _getTimeAgo(user.createdAt),
             'color': Colors.green,
           },
-      // Fallback to sample data if no users
+      // Fallback activities if no users
       if (recentUsers.isEmpty) ...[
         {
           'icon': Icons.person_add,
@@ -475,21 +622,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     leading: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: activities[i]['color'].withOpacity(0.1),
+                        color: (activities[i]['color'] as Color).withOpacity(0.1),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        activities[i]['icon'],
-                        color: activities[i]['color'],
+                        activities[i]['icon'] as IconData,
+                        color: activities[i]['color'] as Color,
                         size: 20,
                       ),
                     ),
                     title: Text(
-                      activities[i]['text'],
+                      activities[i]['text'] as String,
                       style: const TextStyle(fontSize: 14),
                     ),
                     trailing: Text(
-                      activities[i]['time'],
+                      activities[i]['time'] as String,
                       style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                     contentPadding: EdgeInsets.zero,
@@ -525,7 +672,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         children: [
           _buildQuickActionCard('Add User', Icons.person_add, Colors.blue),
           const SizedBox(width: 12),
-          _buildQuickActionCard('Add Product', Icons.add, Colors.green),
+          _buildQuickActionCard('Add Category', Icons.category, Colors.green),
           const SizedBox(width: 12),
           _buildQuickActionCard('View Reports', Icons.analytics, Colors.orange),
           const SizedBox(width: 12),
@@ -576,13 +723,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            _buildStatusItem('Server Status', 'Online', Icons.cloud, Colors.green),
+            _buildStatusItem(
+                'Server Status',
+                _systemStatus['server']!,
+                Icons.cloud,
+                _getStatusColor(_systemStatus['server']!)
+            ),
             const Divider(),
-            _buildStatusItem('Database', 'Connected', Icons.storage, Colors.green),
+            _buildStatusItem(
+                'Database',
+                _systemStatus['database']!,
+                Icons.storage,
+                _getStatusColor(_systemStatus['database']!)
+            ),
             const Divider(),
-            _buildStatusItem('API Services', 'Running', Icons.api, Colors.green),
+            _buildStatusItem(
+                'API Services',
+                _systemStatus['api']!,
+                Icons.api,
+                _getStatusColor(_systemStatus['api']!)
+            ),
             const Divider(),
-            _buildStatusItem('Security', 'Active', Icons.security, Colors.green),
+            _buildStatusItem(
+                'Security',
+                _systemStatus['security']!,
+                Icons.security,
+                _getStatusColor(_systemStatus['security']!)
+            ),
           ],
         ),
       ),
@@ -634,10 +801,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
+                  color: Colors.grey,
                 ),
               ),
             ],
