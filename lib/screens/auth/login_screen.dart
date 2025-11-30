@@ -100,37 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _handleForgotPassword() async {
-    if (_identifierController.text.isEmpty) {
-      _showErrorDialog('Please enter your email or username first.');
-      return;
-    }
-
-    final identifier = _identifierController.text.trim();
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Reset Password'),
-          content: Text('Send password reset instructions to $identifier?'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.of(context).pop();
-                await _sendPasswordReset(identifier);
-              },
-              child: const Text('Send'),
-            ),
-          ],
-        );
-      },
-    );
+    Navigator.pushReplacementNamed(context, AppRoute.resetPassword1Route);
   }
 
   Future<void> _sendPasswordReset(String identifier) async {

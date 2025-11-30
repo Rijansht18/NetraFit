@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:netrafit/screens/admin/admin_dashboard_screen.dart';
+import 'package:netrafit/screens/auth/reset_password1_screen.dart';
+import 'package:netrafit/screens/auth/reset_password2_screen.dart';
+import 'package:netrafit/screens/auth/reset_password3_screen.dart';
 import 'package:netrafit/screens/onboarding/onboarding_screen.dart';
 import 'package:netrafit/screens/home_screen.dart';
 import 'package:netrafit/screens/auth/login_screen.dart';
@@ -17,6 +20,9 @@ class AppRoute {
   static const String adminProductsRoute = '/admin/products';
   static const String adminOrdersRoute = '/admin/orders';
   static const String adminSettingsRoute = '/admin/settings';
+  static const String resetPassword1Route = '/reset-password-1';
+  static const String resetPassword2Route = '/reset-password-2';
+  static const String resetPassword3Route = '/reset-password-3';
 
   static Map<String, WidgetBuilder> getAppRoutes() {
     return {
@@ -28,6 +34,19 @@ class AppRoute {
         child: const AdminDashboardScreen(),
         adminOnly: true,
       ),
+      resetPassword1Route: (context) => const ResetPassword1Screen(),
+      resetPassword2Route: (context) {
+        final args = ModalRoute.of(context)!.settings.arguments as Map<String, String>?;
+        return ResetPassword2Screen(email: args?['email'] ?? '');
+      },
+      resetPassword3Route: (context) {
+        final args = ModalRoute.of(context)!.settings.arguments as Map<String, String>?;
+        return ResetPassword3Screen(
+          email: args?['email'] ?? '',
+          code: args?['code'] ?? '',
+          tempToken: args?['tempToken'] ?? "",
+        );
+      },
     };
   }
 }
