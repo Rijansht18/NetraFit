@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../models/api_response.dart';
+import '../../routes.dart';
+import '../../services/auth_service.dart';
+import '../../providers/auth_provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -9,9 +14,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _identifierController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _rememberMe = false;
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -21,20 +25,130 @@ class _LoginScreenState extends State<LoginScreen> {
         _isLoading = true;
       });
 
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 2));
+      try {
+        print('=== LOGIN SCREEN ===');
+        print('Identifier: ${_identifierController.text}');
+
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final rememberMe = authProvider.rememberMe;
+
+        // Call API through AuthProvider
+        final success = await authProvider.login(
+          _identifierController.text.trim(),
+          _passwordController.text,
+          rememberMe,
+        );
+
+        setState(() {
+          _isLoading = false;
+        });
+
+        if (success) {
+          // Navigate based on user role
+          _navigateBasedOnRole(authProvider);
+        } else {
+          final errorMessage = 'Login failed. Please check your credentials.';
+          _showErrorDialog(errorMessage);
+        }
+      } catch (e) {
+        setState(() {
+          _isLoading = false;
+        });
+        print('=== LOGIN SCREEN ERROR ===');
+        print('Exception: $e');
+        _showErrorDialog('An unexpected error occurred. Please try again.');
+      }
+    }
+  }
+
+  void _navigateBasedOnRole(AuthProvider authProvider) {
+    if (authProvider.isAdmin) {
+      // Navigate to admin screen
+      print('Navigating to ADMIN dashboard - User: ${authProvider.user?.username}');
+      Navigator.pushReplacementNamed(context, AppRoute.adminDashboardRoute);
+    } else {
+      // Navigate to customer home screen
+      print('Navigating to CUSTOMER home - User: ${authProvider.user?.username}');
+      Navigator.pushReplacementNamed(context, AppRoute.homeroute);
+    }
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.error_outline, color: Colors.red, size: 24),
+              SizedBox(width: 8),
+              Text('Login Failed'),
+            ],
+          ),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _handleForgotPassword() async {
+    Navigator.pushReplacementNamed(context, AppRoute.resetPassword1Route);
+  }
+
+  Future<void> _sendPasswordReset(String identifier) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final AuthService authService = AuthService();
+      final ApiResponse response = await authService.forgotPassword(identifier);
 
       setState(() {
         _isLoading = false;
       });
 
-      // Navigate to home after successful login
-      // Navigator.pushReplacementNamed(context, '/home');
+      if (response.success == true) {
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text('Success'),
+              content: Text(response.data?['message'] ?? 'Password reset instructions sent to your email.'),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+      } else {
+        _showErrorDialog(
+            response.error ?? 'Failed to send reset instructions. Please try again.'
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      _showErrorDialog('Network error. Please check your connection.');
     }
   }
 
   void _goToRegister() {
-    Navigator.pushReplacementNamed(context, '/register');
+    Navigator.pushReplacementNamed(context, AppRoute.registerpageroute);
   }
 
   void _togglePasswordVisibility() {
@@ -43,8 +157,17 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
+  String? _identifierValidator(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your email or username';
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+
     return Scaffold(
       backgroundColor: Color(0xFFF5F8FF),
       body: SafeArea(
@@ -90,9 +213,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Email Field
+                      // Email/Username Field
                       const Text(
-                        "Email Address",
+                        "Email or Username",
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
@@ -101,10 +224,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
+                        controller: _identifierController,
+                        keyboardType: TextInputType.text,
                         decoration: InputDecoration(
-                          hintText: "john@gmail.com",
+                          hintText: "Enter email or username",
                           hintStyle: const TextStyle(color: Colors.grey),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -117,18 +240,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           filled: true,
                           fillColor: Colors.grey[50],
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                          prefixIcon: Icon(Icons.email,color: Colors.black,),
-
+                          prefixIcon: Icon(Icons.person, color: Colors.black),
                         ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter your email';
-                          }
-                          if (!value.contains('@')) {
-                            return 'Please enter a valid email';
-                          }
-                          return null;
-                        },
+                        validator: _identifierValidator,
                       ),
 
                       const SizedBox(height: 16),
@@ -186,11 +300,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           Row(
                             children: [
                               Checkbox(
-                                value: _rememberMe,
+                                value: authProvider.rememberMe,
                                 onChanged: (value) {
-                                  setState(() {
-                                    _rememberMe = value!;
-                                  });
+                                  authProvider.setRememberMe(value!);
                                 },
                                 activeColor: const Color(0xFF275BCD),
                               ),
@@ -204,9 +316,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ],
                           ),
                           GestureDetector(
-                            onTap: () {
-                              // Forgot password logic
-                            },
+                            onTap: _handleForgotPassword,
                             child: const Text(
                               "Forgot Password?",
                               style: TextStyle(
@@ -362,7 +472,6 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Using Icon widget directly
             _getSocialIcon(text),
             const SizedBox(width: 12),
             Text(
@@ -382,7 +491,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Icon _getSocialIcon(String text) {
     if (text.contains("Google")) {
       return const Icon(
-        Icons.g_mobiledata, // Google icon
+        Icons.g_mobiledata,
         size: 24,
         color: Colors.black,
       );
@@ -394,17 +503,17 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } else if (text.contains("Facebook")) {
       return const Icon(
-        Icons.facebook_outlined,
-        size: 24,
-        color: Colors.black
+          Icons.facebook_outlined,
+          size: 24,
+          color: Colors.black
       );
     }
-    return const Icon(Icons.question_mark); // Fallback icon
+    return const Icon(Icons.question_mark);
   }
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _identifierController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
