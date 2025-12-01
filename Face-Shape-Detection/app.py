@@ -18,14 +18,15 @@ import datetime
 from overlay import overlay_glasses_with_handles, load_glasses, load_glasses_from_bytes
 import requests
 
-# Backend configuration for remote frames
-BACKEND_URL = os.environ.get('FRAMES_BACKEND_URL', 'http://192.168.1.80:9000')
+# Backend configuration for remote frames - UPDATED TO YOUR HOSTED BACKEND
+BACKEND_URL = 'https://ar-eyewear-try-on-backend-1.onrender.com'
 
 # -------------------- Setup --------------------
 warnings.filterwarnings("ignore", category=UserWarning, module='google.protobuf')
 
 app = Flask(__name__, template_folder='templates')
-CORS(app)  # Enable CORS for all routes
+# Enable CORS for all routes with more permissive settings
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 app.config['UPLOAD_FOLDER'] = 'uploads/'
 app.config['ALLOWED_EXTENSIONS'] = {'jpg', 'jpeg', 'png'}
@@ -172,7 +173,7 @@ frame_shapes_map = {}
 def get_available_frames():
     """Get list of available glass frames from backend API."""
     try:
-        resp = requests.get(f"{BACKEND_URL}/api/frames", timeout=3)
+        resp = requests.get(f"{BACKEND_URL}/api/frames", timeout=30)
         if resp.ok:
             payload = resp.json()
             frames_data = payload.get('data', [])
@@ -182,15 +183,14 @@ def get_available_frames():
                 name = f.get('name', fid)
                 shape = f.get('shape', 'Unknown')
                 
-                # FIX: Get overlay image URL - your backend uses 'overlayImage' field
+                # Get overlay image URL
                 overlay_image_data = f.get('overlayImage', {})
                 if overlay_image_data:
-                    # Construct overlay URL using the frame ID
                     overlay_url = f"{BACKEND_URL}/api/frames/images/{fid}/overlay"
                 else:
                     overlay_url = None
                 
-                # FIX: Get display images
+                # Get display images
                 image_urls = []
                 images_data = f.get('images', [])
                 for idx, img_data in enumerate(images_data):
@@ -206,11 +206,22 @@ def get_available_frames():
                     'remote': True,
                     'brand': f.get('brand', ''),
                     'price': f.get('price', 0),
-                    'description': f.get('description', '')
+                    'description': f.get('description', ''),
+                    'quantity': f.get('quantity', 0),
+                    'type': f.get('type', ''),
+                    'size': f.get('size', ''),
+                    'colors': f.get('colors', [])
                 })
+            print(f"✓ Successfully fetched {len(frames)} frames from backend")
             return frames
+        else:
+            print(f"✗ Backend returned error: {resp.status_code} - {resp.text}")
+    except requests.exceptions.Timeout:
+        print(f"✗ Timeout fetching frames from {BACKEND_URL}")
+    except requests.exceptions.ConnectionError:
+        print(f"✗ Connection error to {BACKEND_URL}")
     except Exception as e:
-        print(f"Warning: could not fetch frames from backend ({BACKEND_URL}): {e}")
+        print(f"✗ Error fetching frames from {BACKEND_URL}: {e}")
 
     return []
 
@@ -231,7 +242,9 @@ def load_glasses_from_url(url, filename=None):
             raise ValueError("No URL provided")
             
         print(f"Loading glasses from URL: {url}")
-        resp = requests.get(url, timeout=10)
+        
+        # Increase timeout for hosted backend
+        resp = requests.get(url, timeout=30)
         resp.raise_for_status()
         data = resp.content
         
@@ -240,6 +253,9 @@ def load_glasses_from_url(url, filename=None):
             
         print(f"Successfully downloaded {len(data)} bytes for {filename or 'unknown'}")
         return load_glasses_from_bytes(data, filename=filename)
+    except requests.exceptions.Timeout:
+        print(f"Timeout loading glasses from {url}")
+        raise
     except Exception as e:
         print(f"Error fetching overlay image from {url}: {e}")
         raise
@@ -313,7 +329,8 @@ if available_frames:
         if first.get('remote') and first.get('overlay_url'):
             try:
                 current_glasses = load_glasses_from_url(first['overlay_url'], filename=first.get('name'))
-            except Exception:
+            except Exception as e:
+                print(f"✗ Error loading default frame overlay: {e}")
                 current_glasses = None
             print(f"✓ Loaded default remote frame: {first.get('name')} (Shape: {first.get('shape')})")
         else:
@@ -468,51 +485,64 @@ def proxy_to_backend(subpath):
     """Proxy API requests to Node.js backend"""
     try:
         # Build the target URL
-        node_backend = 'http://192.168.1.80:9000'
+        node_backend = 'https://ar-eyewear-try-on-backend-1.onrender.com'
         url = f"{node_backend}/api/{subpath}"
         
         # Forward headers (remove Host header to avoid issues)
         headers = {key: value for key, value in request.headers if key.lower() != 'host'}
         
+        # Add CORS headers for cross-origin requests
+        headers['Origin'] = request.host_url.rstrip('/')
+        
         # Handle different request methods
         if request.method == 'GET':
-            resp = requests.get(url, params=request.args, headers=headers)
+            resp = requests.get(url, params=request.args, headers=headers, timeout=30)
         elif request.method == 'POST':
             # Handle multipart/form-data (file uploads)
             if request.content_type and 'multipart/form-data' in request.content_type:
                 files = request.files
                 data = request.form.to_dict()
-                resp = requests.post(url, files=files, data=data, headers=headers)
+                resp = requests.post(url, files=files, data=data, headers=headers, timeout=30)
             else:
                 # Handle JSON or form data
                 data = request.get_data()
                 resp = requests.post(url, data=data, headers=headers, 
-                                   json=request.json if request.is_json else None)
+                                   json=request.json if request.is_json else None, timeout=30)
         elif request.method == 'PUT':
             if request.content_type and 'multipart/form-data' in request.content_type:
                 files = request.files
                 data = request.form.to_dict()
-                resp = requests.put(url, files=files, data=data, headers=headers)
+                resp = requests.put(url, files=files, data=data, headers=headers, timeout=30)
             else:
                 data = request.get_data()
                 resp = requests.put(url, data=data, headers=headers,
-                                  json=request.json if request.is_json else None)
+                                  json=request.json if request.is_json else None, timeout=30)
         elif request.method == 'DELETE':
-            resp = requests.delete(url, headers=headers)
+            resp = requests.delete(url, headers=headers, timeout=30)
         elif request.method == 'OPTIONS':
             # Handle CORS preflight
-            return Response(status=200)
+            response = Response(status=200)
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+            response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+            return response
         else:
             return jsonify({'error': 'Method not allowed'}), 405
         
-        # Return the response
+        # Return the response with CORS headers
         excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
         response_headers = [(name, value) for (name, value) in resp.raw.headers.items() 
                           if name.lower() not in excluded_headers]
         
+        # Add CORS headers
+        response_headers.append(('Access-Control-Allow-Origin', '*'))
+        
         response = Response(resp.content, resp.status_code, response_headers)
         return response
         
+    except requests.exceptions.Timeout:
+        print(f"Proxy timeout for {subpath}")
+        return jsonify({'error': 'Backend request timeout'}), 504
     except requests.exceptions.RequestException as e:
         print(f"Proxy error for {subpath}: {e}")
         return jsonify({'error': f'Backend connection failed: {str(e)}'}), 500
@@ -1044,8 +1074,8 @@ def add_frame():
 def edit_frame(frame_id):
     """Edit existing frame page"""
     try:
-        # Use proxy to get frame data
-        response = requests.get(f"http://192.168.1.80:9000/api/frames/{frame_id}")
+        # Use hosted backend to get frame data
+        response = requests.get(f"{BACKEND_URL}/api/frames/{frame_id}", timeout=30)
         
         if not response.ok:
             return "Frame not found", 404
@@ -1073,21 +1103,20 @@ def edit_frame(frame_id):
             'subCategory': frame_data.get('subCategory', {})
         }
         
-        # Get image URLs through proxy
+        # Get image URLs from hosted backend
         if frame_data.get('_id'):
-            base_url = f"{request.host_url.rstrip('/')}/api/proxy/frames/images"
-            frame_id_val = frame_data['_id']
+            fid = str(frame_data['_id'])
             
             # Product images
             image_urls = []
             if frame_data.get('images'):
                 for i in range(len(frame_data['images'])):
-                    image_urls.append(f"{base_url}/{frame_id_val}/{i}")
+                    image_urls.append(f"{BACKEND_URL}/api/frames/images/{fid}/{i}")
             frame['image_urls'] = image_urls
             
             # Overlay image
             if frame_data.get('overlayImage'):
-                frame['overlay_url'] = f"{base_url}/{frame_id_val}/overlay"
+                frame['overlay_url'] = f"{BACKEND_URL}/api/frames/images/{fid}/overlay"
         
         return render_template('frame_form.html', 
                           edit_mode=True, 
@@ -1169,6 +1198,7 @@ def allowed_file(filename):
 # -------------------- Run --------------------
 if __name__ == '__main__':
     print("Starting Flask application...")
+    print(f"Using hosted backend: {BACKEND_URL}")
     print(f"Optimal distance range: {OPTIMAL_DISTANCE_MIN}-{OPTIMAL_DISTANCE_MAX} cm")
     print(f"Target analysis distance: {TARGET_DISTANCE} cm")
     print("Available routes:")
@@ -1176,6 +1206,9 @@ if __name__ == '__main__':
     print("  /client_camera - Client camera try-on (RECOMMENDED)")
     print("  /real_time     - Legacy server camera try-on")
     print("  /upload        - Upload image for try-on")
+    print("  /api/proxy/*   - Proxy to Node.js backend")
+    print("  /frame_management/* - Frame management pages")
+    
     # Optional HTTPS support: set environment variables to enable
     # USE_HTTPS=true, SSL_CERT_PATH and SSL_KEY_PATH (paths to .pem files)
     use_https = os.environ.get('USE_HTTPS', 'false').lower() in ('1', 'true', 'yes')

@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import '../models/api_response.dart';
 
 class CategoryService {
-  static const String baseUrl = 'http://192.168.1.80:9000/api';
+  static const String baseUrl = 'https://ar-eyewear-try-on-backend-1.onrender.com/api';
 
   final http.Client client;
 
