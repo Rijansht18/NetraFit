@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frame Form</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .container {
+            max-width: 100%;
+            padding: 16px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .form-section {
+            background: white;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            padding: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: #555;
+        }
+
+        .required::after {
+            content: " *";
+            color: #ff4757;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1.5px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: border-color 0.2s;
+            background: white;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-select {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1.5px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 15px;
+            background: white;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23666' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            background-size: 12px;
+        }
+
+        .form-select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 12px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f8f9ff;
+            margin-top: 8px;
+        }
+
+        .upload-area:hover {
+            background: #eef1ff;
+            border-color: #764ba2;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            color: #667eea;
+            margin-bottom: 12px;
+        }
+
+        .upload-text {
+            font-size: 16px;
+            font-weight: 500;
+            color: #667eea;
+            margin-bottom: 6px;
+        }
+
+        .upload-subtext {
+            font-size: 13px;
+            color: #888;
+        }
+
+        .preview-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .preview-item {
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #e0e0e0;
+        }
+
+        .preview-img {
+            width: 100%;
+            height: 100px;
+            object-fit: cover;
+            display: block;
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(255, 71, 87, 0.9);
+            color: white;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .remove-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .color-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .color-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #f0f0f0;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+        }
+
+        .color-tag-remove {
+            cursor: pointer;
+            color: #666;
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .color-input-container {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .color-input {
+            flex: 1;
+        }
+
+        .add-color-btn {
+            padding: 0 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .add-color-btn:hover {
+            background: #5a6fd8;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 12px;
+            padding: 16px;
+            background: white;
+            position: sticky;
+            bottom: 0;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #666;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            display: none;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f0f0f0;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            color: #ff4757;
+            font-size: 13px;
+            margin-top: 4px;
+            display: none;
+        }
+
+        .success-message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            z-index: 1001;
+            display: none;
+        }
+
+        .success-icon {
+            font-size: 48px;
+            color: #2ed573;
+            margin-bottom: 16px;
+        }
+
+        .image-count {
+            font-size: 12px;
+            color: #888;
+            text-align: center;
+            margin-top: 8px;
+        }
+
+        .category-loading {
+            text-align: center;
+            padding: 10px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .select-disabled {
+            background-color: #f5f5f5;
+            color: #999;
+            cursor: not-allowed;
+        }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2ed573;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1002;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            display: none;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 12px;
+            }
+            
+            .form-section {
+                padding: 12px;
+            }
+            
+            .upload-area {
+                padding: 30px 16px;
+            }
+            
+            .btn {
+                padding: 12px;
+            }
+            
+            .toast {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                transform: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <!-- <div class="header">
+        <h1>{{ 'Edit Frame' if edit_mode else 'Add New Frame' }}</h1>
+    </div> -->
+
+    <!-- Success Toast -->
+    <div class="toast" id="successToast">
+        <span>✓</span>
+        <span id="toastMessage">Frame saved successfully!</span>
+    </div>
+
+    <!-- Main Form -->
+    <div class="container">
+        <form id="frameForm">
+            {% if edit_mode %}
+            <input type="hidden" id="frameId" value="{{ frame.id }}">
+            {% endif %}
+
+            <!-- Basic Information -->
+            <div class="form-section">
+                <div class="section-title">Basic Information</div>
+                
+                <div class="form-group">
+                    <label class="form-label required" for="name">Frame Name</label>
+                    <input type="text" class="form-input" id="name" name="name" 
+                           value="{{ frame.name if edit_mode else '' }}" 
+                           placeholder="Enter frame name" required>
+                    <div class="error-message" id="nameError">Please enter a frame name</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label required" for="brand">Brand</label>
+                    <input type="text" class="form-input" id="brand" name="brand" 
+                           value="{{ frame.brand if edit_mode else '' }}" 
+                           placeholder="Enter brand name" required>
+                    <div class="error-message" id="brandError">Please enter a brand name</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label required" for="price">Price (रु)</label>
+                    <input type="number" class="form-input" id="price" name="price" 
+                           step="0.01" min="0"
+                           value="{{ frame.price if edit_mode else '' }}" 
+                           placeholder="0.00" required>
+                    <div class="error-message" id="priceError">Please enter a valid price</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label required" for="quantity">Quantity</label>
+                    <input type="number" class="form-input" id="quantity" name="quantity" 
+                           min="0"
+                           value="{{ frame.quantity if edit_mode else '0' }}" 
+                           placeholder="0" required>
+                    <div class="error-message" id="quantityError">Please enter quantity</div>
+                </div>
+            </div>
+
+            <!-- Categories -->
+            <div class="form-section">
+                <div class="section-title">Categories</div>
+                
+                <!-- Main Category -->
+                <div class="form-group">
+                    <label class="form-label required" for="mainCategory">Main Category</label>
+                    <select class="form-select" id="mainCategory" name="mainCategory" required>
+                        <option value="">Loading main categories...</option>
+                    </select>
+                    <div class="error-message" id="mainCategoryError">Please select a main category</div>
+                </div>
+
+                <!-- Sub Category -->
+                <div class="form-group">
+                    <label class="form-label required" for="subCategory">Sub Category</label>
+                    <select class="form-select select-disabled" id="subCategory" name="subCategory" disabled required>
+                        <option value="">Please select main category first</option>
+                    </select>
+                    <div class="error-message" id="subCategoryError">Please select a sub category</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label required" for="type">Type</label>
+                    <select class="form-select" id="type" name="type" required>
+                        <option value="">Select Type</option>
+                        <option value="full_rim" {% if edit_mode and frame.type == 'full_rim' %}selected{% endif %}>Full Rim</option>
+                        <option value="half_rim" {% if edit_mode and frame.type == 'half_rim' %}selected{% endif %}>Half Rim</option>
+                        <option value="rimless" {% if edit_mode and frame.type == 'rimless' %}selected{% endif %}>Rimless</option>
+                    </select>
+                    <div class="error-message" id="typeError">Please select a type</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label required" for="shape">Shape</label>
+                    <select class="form-select" id="shape" name="shape" required>
+                        <option value="">Select Shape</option>
+                        <option value="round" {% if edit_mode and frame.shape == 'round' %}selected{% endif %}>Round</option>
+                        <option value="rectangle" {% if edit_mode and frame.shape == 'rectangle' %}selected{% endif %}>Rectangle</option>
+                        <option value="square" {% if edit_mode and frame.shape == 'square' %}selected{% endif %}>Square</option>
+                        <option value="aviator" {% if edit_mode and frame.shape == 'aviator' %}selected{% endif %}>Aviator</option>
+                        <option value="wayfarer" {% if edit_mode and frame.shape == 'wayfarer' %}selected{% endif %}>Wayfarer</option>
+                        <option value="cate_eye" {% if edit_mode and frame.shape == 'cate_eye' %}selected{% endif %}>Cat Eye</option>
+                        <option value="geometric" {% if edit_mode and frame.shape == 'geometric' %}selected{% endif %}>Geometric</option>
+                        <option value="oval" {% if edit_mode and frame.shape == 'oval' %}selected{% endif %}>Oval</option>
+                        <option value="browline" {% if edit_mode and frame.shape == 'browline' %}selected{% endif %}>Browline</option>
+                    </select>
+                    <div class="error-message" id="shapeError">Please select a shape</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label required" for="size">Size</label>
+                    <select class="form-select" id="size" name="size" required>
+                        <option value="">Select Size</option>
+                        <option value="extra-small" {% if edit_mode and frame.size == 'extra-small' %}selected{% endif %}>Extra Small</option>
+                        <option value="small" {% if edit_mode and frame.size == 'small' %}selected{% endif %}>Small</option>
+                        <option value="medium" {% if edit_mode and frame.size == 'medium' %}selected{% endif %}>Medium</option>
+                        <option value="large" {% if edit_mode and frame.size == 'large' %}selected{% endif %}>Large</option>
+                        <option value="extra-large" {% if edit_mode and frame.size == 'extra-large' %}selected{% endif %}>Extra Large</option>
+                    </select>
+                    <div class="error-message" id="sizeError">Please select a size</div>
+                </div>
+            </div>
+
+            <!-- Images -->
+            <div class="form-section">
+                <div class="section-title">Images</div>
+                
+                <!-- Product Images -->
+                <div class="form-group">
+                    <label class="form-label required">Product Images (1-5 images)</label>
+                    <div class="upload-area" id="imagesUpload">
+                        <div class="upload-icon">📷</div>
+                        <div class="upload-text">Tap to add product images</div>
+                        <div class="upload-subtext">JPEG, PNG • Max 5 images</div>
+                    </div>
+                    <input type="file" id="imagesInput" multiple accept="image/*" style="display: none;">
+                    
+                    <div class="preview-container" id="imagesPreview">
+                        {% if edit_mode and frame.image_urls %}
+                            {% for image_url in frame.image_urls %}
+                            <div class="preview-item">
+                                <img src="{{ image_url }}" class="preview-img" alt="Product Image">
+                                <button type="button" class="remove-btn" onclick="removeImage(this)">×</button>
+                            </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                    <div class="image-count" id="imageCount">0/5 images</div>
+                    <div class="error-message" id="imagesError">Please add at least one product image</div>
+                </div>
+
+                <!-- Overlay Image -->
+                <div class="form-group">
+                    <label class="form-label required">Overlay Image</label>
+                    <div class="upload-area" id="overlayUpload">
+                        <div class="upload-icon">🎭</div>
+                        <div class="upload-text">Tap to add overlay image</div>
+                        <div class="upload-subtext">Transparent PNG for virtual try-on</div>
+                    </div>
+                    <input type="file" id="overlayInput" accept="image/*" style="display: none;">
+                    
+                    <div class="preview-container" id="overlayPreview">
+                        {% if edit_mode and frame.overlay_url %}
+                        <div class="preview-item">
+                            <img src="{{ frame.overlay_url }}" class="preview-img" alt="Overlay Image">
+                            <button type="button" class="remove-btn" onclick="removeOverlay()">×</button>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="error-message" id="overlayError">Please add an overlay image</div>
+                </div>
+            </div>
+
+            <!-- Additional Information -->
+            <div class="form-section">
+                <div class="section-title">Additional Information</div>
+                
+                <div class="form-group">
+                    <label class="form-label required">Colors</label>
+                    <div class="color-input-container">
+                        <input type="text" class="form-input color-input" id="colorInput" 
+                               placeholder="Enter color (e.g., Black)">
+                        <button type="button" class="add-color-btn" onclick="addColor()">Add</button>
+                    </div>
+                    <div class="color-tags" id="colorTags">
+                        {% if edit_mode and frame.colors %}
+                            {% for color in frame.colors %}
+                            <span class="color-tag">
+                                {{ color }}
+                                <span class="color-tag-remove" onclick="removeColor(this)">×</span>
+                            </span>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                    <input type="hidden" id="colors" name="colors" value="{{ frame.colors|join(',') if edit_mode and frame.colors else '' }}">
+                    <div class="error-message" id="colorsError">Please add at least one color</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="description">Description</label>
+                    <textarea class="form-input" id="description" name="description" 
+                              rows="3" placeholder="Enter frame description (optional)">{{ frame.description if edit_mode else '' }}</textarea>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="handleCancel()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="handleSubmit()">
+            {{ 'Update' if edit_mode else 'Save' }}
+        </button>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div id="loadingText">Processing...</div>
+    </div>
+
+    <script>
+    // Configuration - Use relative paths
+    const FLASK_BASE_URL = '{{ FLASK_BASE_URL }}' || window.location.origin;
+    const USE_PROXY = {{ 'true' if USE_PROXY else 'false' }};
+    
+    // Helper to build API URL
+    function getApiUrl(endpoint) {
+        if (USE_PROXY) {
+            // Use Flask proxy endpoint
+            return FLASK_BASE_URL + '/api/proxy/' + endpoint;
+        } else {
+            // Direct backend (won't work with HTTPS)
+            return 'http://192.168.1.80:9000/api/' + endpoint;
+        }
+    }
+    
+    // Global variables
+    let productImages = [];
+    let overlayImage = null;
+    let colors = [];
+    let mainCategories = [];
+    let subCategories = [];
+    const editMode = {{ 'true' if edit_mode else 'false' }};
+    let frameId = null;
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+        frameId = document.getElementById('frameId') ? document.getElementById('frameId').value : null;
+        
+        // Load categories
+        loadMainCategories();
+        
+        // If edit mode, load frame data
+        if (editMode && frameId) {
+            loadFrameData();
+        }
+        
+        // Setup event listeners
+        setupEventListeners();
+    });
+    
+    function setupEventListeners() {
+        // File uploads
+        document.getElementById('imagesUpload').addEventListener('click', function() {
+            document.getElementById('imagesInput').click();
+        });
+        
+        document.getElementById('overlayUpload').addEventListener('click', function() {
+            document.getElementById('overlayInput').click();
+        });
+        
+        document.getElementById('imagesInput').addEventListener('change', handleImagesUpload);
+        document.getElementById('overlayInput').addEventListener('change', handleOverlayUpload);
+        
+        // Main category change
+        document.getElementById('mainCategory').addEventListener('change', function() {
+            const mainCategoryId = this.value;
+            if (mainCategoryId) {
+                loadSubCategories(mainCategoryId);
+            } else {
+                resetSubCategory();
+            }
+        });
+    }
+    
+    // Simple category loading
+    async function loadMainCategories() {
+        try {
+            const response = await fetch(getApiUrl('main-categories'));
+            const data = await response.json();
+            
+            if (data.success && data.data) {
+                mainCategories = data.data;
+                populateMainCategories();
+            }
+        } catch (error) {
+            console.log('Error loading categories:', error);
+        }
+    }
+    
+    function populateMainCategories() {
+        const select = document.getElementById('mainCategory');
+        select.innerHTML = '<option value="">Select Main Category</option>';
+        
+        mainCategories.forEach(function(category) {
+            const option = document.createElement('option');
+            option.value = category._id;
+            option.textContent = category.name;
+            select.appendChild(option);
+        });
+    }
+    
+    async function loadSubCategories(mainCategoryId) {
+        const select = document.getElementById('subCategory');
+        select.innerHTML = '<option value="">Loading...</option>';
+        select.disabled = true;
+        
+        try {
+            const response = await fetch(getApiUrl('sub-categories/main-category/' + mainCategoryId));
+            const data = await response.json();
+            
+            if (data.success && data.data) {
+                subCategories = data.data;
+                populateSubCategories();
+            }
+        } catch (error) {
+            console.log('Error loading sub-categories:', error);
+            select.innerHTML = '<option value="">Error loading</option>';
+        }
+    }
+    
+    function populateSubCategories() {
+        const select = document.getElementById('subCategory');
+        select.innerHTML = '<option value="">Select Sub Category</option>';
+        
+        if (subCategories.length === 0) {
+            select.innerHTML = '<option value="">No sub-categories</option>';
+            return;
+        }
+        
+        subCategories.forEach(function(category) {
+            const option = document.createElement('option');
+            option.value = category._id;
+            option.textContent = category.name;
+            select.appendChild(option);
+        });
+        
+        select.disabled = false;
+    }
+    
+    function resetSubCategory() {
+        const select = document.getElementById('subCategory');
+        select.innerHTML = '<option value="">Select main category first</option>';
+        select.disabled = true;
+    }
+    
+    // File handling (keep your existing functions, just make sure they work)
+    function handleImagesUpload(e) {
+        const files = Array.from(e.target.files);
+        const maxImages = 5;
+        
+        if (productImages.length + files.length > maxImages) {
+            alert('Maximum 5 images allowed');
+            return;
+        }
+        
+        files.forEach(function(file) {
+            if (!file.type.startsWith('image/')) {
+                alert('Please select image files only');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                productImages.push({
+                    file: file,
+                    preview: event.target.result
+                });
+                updateImagesPreview();
+            };
+            reader.readAsDataURL(file);
+        });
+        
+        e.target.value = '';
+    }
+    
+    function handleOverlayUpload(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file');
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            overlayImage = {
+                file: file,
+                preview: event.target.result
+            };
+            updateOverlayPreview();
+        };
+        reader.readAsDataURL(file);
+    }
+    
+    function updateImagesPreview() {
+        const container = document.getElementById('imagesPreview');
+        container.innerHTML = '';
+        
+        productImages.forEach(function(image, index) {
+            const div = document.createElement('div');
+            div.className = 'preview-item';
+            div.innerHTML = `
+                <img src="${image.preview}" class="preview-img">
+                <button type="button" class="remove-btn" onclick="removeProductImage(${index})">×</button>
+            `;
+            container.appendChild(div);
+        });
+    }
+    
+    function updateOverlayPreview() {
+        const container = document.getElementById('overlayPreview');
+        container.innerHTML = '';
+        
+        if (overlayImage) {
+            const div = document.createElement('div');
+            div.className = 'preview-item';
+            div.innerHTML = `
+                <img src="${overlayImage.preview}" class="preview-img">
+                <button type="button" class="remove-btn" onclick="removeOverlay()">×</button>
+            `;
+            container.appendChild(div);
+        }
+    }
+    
+    // Form submission
+    async function handleSubmit() {
+        // Basic validation
+        if (!validateForm()) return;
+        
+        showLoading('Saving...');
+        
+        try {
+            const formData = new FormData();
+            
+            // Add form fields
+            const fields = ['name', 'brand', 'price', 'quantity', 'type', 'shape', 'size', 
+                          'description', 'mainCategory', 'subCategory'];
+            fields.forEach(function(field) {
+                const element = document.getElementById(field);
+                if (element && element.value) {
+                    formData.append(field, element.value);
+                }
+            });
+            
+            // Add colors
+            if (colors.length > 0) {
+                formData.append('colors', colors.join(','));
+            }
+            
+            // Add images
+            productImages.forEach(function(image) {
+                formData.append('images', image.file);
+            });
+            
+            if (overlayImage) {
+                formData.append('overlayImage', overlayImage.file);
+            }
+            
+            // Determine endpoint
+            let endpoint, method;
+            if (editMode && frameId) {
+                endpoint = getApiUrl('frames/' + frameId);
+                method = 'PUT';
+                formData.append('_id', frameId);
+            } else {
+                endpoint = getApiUrl('frames');
+                method = 'POST';
+            }
+            
+            // Send request
+            const response = await fetch(endpoint, {
+                method: method,
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showToast('Frame saved successfully!');
+                if (!editMode) {
+                    setTimeout(function() {
+                        clearForm();
+                    }, 1500);
+                }
+            } else {
+                throw new Error(data.error || 'Failed to save');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    // Helper functions
+    function validateForm() {
+        // Simple validation - add your validation logic here
+        return true;
+    }
+    
+    function showLoading(text) {
+        const overlay = document.getElementById('loadingOverlay');
+        const textEl = document.getElementById('loadingText');
+        if (textEl) textEl.textContent = text;
+        if (overlay) overlay.style.display = 'flex';
+    }
+    
+    function hideLoading() {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) overlay.style.display = 'none';
+    }
+    
+    function showToast(message, type) {
+        const toast = document.getElementById('successToast');
+        const msgEl = document.getElementById('toastMessage');
+        if (msgEl) msgEl.textContent = message;
+        if (toast) {
+            toast.style.background = type === 'error' ? '#ff4757' : '#2ed573';
+            toast.style.display = 'flex';
+            setTimeout(function() {
+                toast.style.display = 'none';
+            }, 3000);
+        }
+    }
+    
+    function handleCancel() {
+        // Notify Flutter to close
+        if (window.FlutterChannel) {
+            window.FlutterChannel.postMessage(JSON.stringify({type: 'cancel'}));
+        }
+    }
+</script>
+</body>
+</html>

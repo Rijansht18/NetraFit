@@ -19,7 +19,7 @@ from overlay import overlay_glasses_with_handles, load_glasses, load_glasses_fro
 import requests
 
 # Backend configuration for remote frames
-BACKEND_URL = os.environ.get('FRAMES_BACKEND_URL', 'http://localhost:9000')
+BACKEND_URL = os.environ.get('FRAMES_BACKEND_URL', 'http://192.168.1.80:9000')
 
 # -------------------- Setup --------------------
 warnings.filterwarnings("ignore", category=UserWarning, module='google.protobuf')
@@ -461,6 +461,64 @@ class FaceShapeAnalyzer:
         self.optimal_distance_count = 0
 
 # -------------------- CLIENT CAMERA ENDPOINTS --------------------
+
+# Add this route BEFORE your other routes
+@app.route('/api/proxy/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+def proxy_to_backend(subpath):
+    """Proxy API requests to Node.js backend"""
+    try:
+        # Build the target URL
+        node_backend = 'http://192.168.1.80:9000'
+        url = f"{node_backend}/api/{subpath}"
+        
+        # Forward headers (remove Host header to avoid issues)
+        headers = {key: value for key, value in request.headers if key.lower() != 'host'}
+        
+        # Handle different request methods
+        if request.method == 'GET':
+            resp = requests.get(url, params=request.args, headers=headers)
+        elif request.method == 'POST':
+            # Handle multipart/form-data (file uploads)
+            if request.content_type and 'multipart/form-data' in request.content_type:
+                files = request.files
+                data = request.form.to_dict()
+                resp = requests.post(url, files=files, data=data, headers=headers)
+            else:
+                # Handle JSON or form data
+                data = request.get_data()
+                resp = requests.post(url, data=data, headers=headers, 
+                                   json=request.json if request.is_json else None)
+        elif request.method == 'PUT':
+            if request.content_type and 'multipart/form-data' in request.content_type:
+                files = request.files
+                data = request.form.to_dict()
+                resp = requests.put(url, files=files, data=data, headers=headers)
+            else:
+                data = request.get_data()
+                resp = requests.put(url, data=data, headers=headers,
+                                  json=request.json if request.is_json else None)
+        elif request.method == 'DELETE':
+            resp = requests.delete(url, headers=headers)
+        elif request.method == 'OPTIONS':
+            # Handle CORS preflight
+            return Response(status=200)
+        else:
+            return jsonify({'error': 'Method not allowed'}), 405
+        
+        # Return the response
+        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        response_headers = [(name, value) for (name, value) in resp.raw.headers.items() 
+                          if name.lower() not in excluded_headers]
+        
+        response = Response(resp.content, resp.status_code, response_headers)
+        return response
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Proxy error for {subpath}: {e}")
+        return jsonify({'error': f'Backend connection failed: {str(e)}'}), 500
+    except Exception as e:
+        print(f"Unexpected proxy error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/client_camera')
 def client_camera():
@@ -971,6 +1029,75 @@ def frame_image(filename):
 def video_feed():
     """Legacy server camera feed (optional)"""
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/frame_management/add')
+def add_frame():
+    """Add new frame page"""
+    return render_template('frame_form.html', 
+                          edit_mode=False, 
+                          frame={},
+                          FLASK_BASE_URL=request.host_url.rstrip('/'),
+                          USE_PROXY=True,  # Tell template to use proxy
+                          NODE_BACKEND_URL=request.host_url.rstrip('/'))  # Use Flask URL for API
+
+@app.route('/frame_management/edit/<frame_id>')
+def edit_frame(frame_id):
+    """Edit existing frame page"""
+    try:
+        # Use proxy to get frame data
+        response = requests.get(f"http://192.168.1.80:9000/api/frames/{frame_id}")
+        
+        if not response.ok:
+            return "Frame not found", 404
+        
+        data = response.json()
+        
+        if not data.get('success'):
+            return "Frame not found", 404
+        
+        frame_data = data.get('data', {})
+        
+        # Prepare frame object
+        frame = {
+            'id': frame_id,
+            'name': frame_data.get('name', ''),
+            'brand': frame_data.get('brand', ''),
+            'price': frame_data.get('price', ''),
+            'quantity': frame_data.get('quantity', 0),
+            'type': frame_data.get('type', ''),
+            'shape': frame_data.get('shape', ''),
+            'size': frame_data.get('size', ''),
+            'description': frame_data.get('description', ''),
+            'colors': frame_data.get('colors', []),
+            'mainCategory': frame_data.get('mainCategory', {}),
+            'subCategory': frame_data.get('subCategory', {})
+        }
+        
+        # Get image URLs through proxy
+        if frame_data.get('_id'):
+            base_url = f"{request.host_url.rstrip('/')}/api/proxy/frames/images"
+            frame_id_val = frame_data['_id']
+            
+            # Product images
+            image_urls = []
+            if frame_data.get('images'):
+                for i in range(len(frame_data['images'])):
+                    image_urls.append(f"{base_url}/{frame_id_val}/{i}")
+            frame['image_urls'] = image_urls
+            
+            # Overlay image
+            if frame_data.get('overlayImage'):
+                frame['overlay_url'] = f"{base_url}/{frame_id_val}/overlay"
+        
+        return render_template('frame_form.html', 
+                          edit_mode=True, 
+                          frame=frame,
+                          FLASK_BASE_URL=request.host_url.rstrip('/'),
+                          USE_PROXY=True,
+                          NODE_BACKEND_URL=request.host_url.rstrip('/'))
+    except Exception as e:
+        print(f"Error loading frame for edit: {e}")
+        return "Error loading frame", 500
 
 def generate_frames():
     """Legacy server camera frame generator"""
