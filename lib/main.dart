@@ -9,7 +9,7 @@ import 'package:netrafit/providers/auth_provider.dart';
 import 'package:netrafit/providers/frame_provider.dart';
 import 'package:netrafit/widgets/protected_route.dart';
 
-void main() {
+Future<void> main() async {
   runApp(const MyApp());
 }
 
