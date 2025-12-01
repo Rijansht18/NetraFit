@@ -21,6 +21,10 @@ dependencies:
   path: ^1.8.3
   permission_handler: ^11.0.1
   webview_flutter: ^4.4.2
+  webview_flutter_android:
+  webview_flutter_wkwebview: ^3.0.5
+  dio: ^5.3.3
+  syncfusion_flutter_charts: ^31.2.15
 
 dev_dependencies:
   flutter_test:

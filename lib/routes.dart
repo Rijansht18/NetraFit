@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:netrafit/screens/admin/admin_dashboard_screen.dart';
+import 'package:netrafit/screens/admin/user_management_screen.dart';
 import 'package:netrafit/screens/auth/reset_password1_screen.dart';
 import 'package:netrafit/screens/auth/reset_password2_screen.dart';
 import 'package:netrafit/screens/auth/reset_password3_screen.dart';
@@ -16,7 +17,7 @@ class AppRoute {
   static const String homeroute = '/home';
   static const String onboardingroute = '/onboard';
   static const String adminDashboardRoute = '/admin/dashboard';
-  static const String adminUsersRoute = '/admin/users';
+  static const String userManagementRoute = '/admin/users';
   static const String adminProductsRoute = '/admin/products';
   static const String adminOrdersRoute = '/admin/orders';
   static const String adminSettingsRoute = '/admin/settings';
@@ -47,6 +48,10 @@ class AppRoute {
           tempToken: args?['tempToken'] ?? "",
         );
       },
+      userManagementRoute: (context) => ProtectedRoute(
+        child: UserManagementScreen(),
+        adminOnly: true,
+      ),
     };
   }
 }

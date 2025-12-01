@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:netrafit/routes.dart';
 import 'package:netrafit/core/themes/app_theme.dart';
 import 'package:netrafit/providers/auth_provider.dart';
+import 'package:netrafit/providers/frame_provider.dart';
 import 'package:netrafit/widgets/protected_route.dart';
 
 void main() {
@@ -17,8 +18,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (context) => AuthProvider(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => FrameProvider()),
+      ],
       child: MaterialApp(
         title: 'Virtual Try-On',
         theme: AppTheme.lightTheme,

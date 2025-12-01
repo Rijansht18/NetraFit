@@ -10,6 +10,13 @@ class UserModel {
   final String? status;
   final String? profilePhoto;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final DateTime? passwordChangedAt;
+  final String? resetCode;
+  final DateTime? resetCodeExpires;
+  final DateTime? lastResetRequest;
+  final int? resetAttempts;
+  final DateTime? accountSuspendedUntil;
 
   UserModel({
     this.id,
@@ -23,6 +30,13 @@ class UserModel {
     this.status,
     this.profilePhoto,
     this.createdAt,
+    this.updatedAt,
+    this.passwordChangedAt,
+    this.resetCode,
+    this.resetCodeExpires,
+    this.lastResetRequest,
+    this.resetAttempts,
+    this.accountSuspendedUntil,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -38,6 +52,13 @@ class UserModel {
       status: json['status'],
       profilePhoto: json['profilePhoto'],
       createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
+      updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : null,
+      passwordChangedAt: json['passwordChangedAt'] != null ? DateTime.parse(json['passwordChangedAt']) : null,
+      resetCode: json['resetCode'],
+      resetCodeExpires: json['resetCodeExpires'] != null ? DateTime.parse(json['resetCodeExpires']) : null,
+      lastResetRequest: json['lastResetRequest'] != null ? DateTime.parse(json['lastResetRequest']) : null,
+      resetAttempts: json['resetAttempts'],
+      accountSuspendedUntil: json['accountSuspendedUntil'] != null ? DateTime.parse(json['accountSuspendedUntil']) : null,
     );
   }
 
@@ -70,6 +91,11 @@ class UserModel {
   bool get isAdmin => role == 'ADMIN';
   bool get isCustomer => role == 'CUSTOMER';
 
+  // Status helpers
+  bool get isActive => status != 'SUSPENDED';
+  bool get isSuspended => status == 'SUSPENDED';
+  bool get isAccountSuspended => accountSuspendedUntil != null && accountSuspendedUntil!.isAfter(DateTime.now());
+
   // Storage methods
   Map<String, dynamic> toStorageJson() {
     return {
@@ -83,6 +109,7 @@ class UserModel {
       'status': status,
       'profilePhoto': profilePhoto,
       'createdAt': createdAt?.toIso8601String(),
+      'updatedAt': updatedAt?.toIso8601String(),
     };
   }
 
@@ -99,6 +126,7 @@ class UserModel {
       status: json['status'],
       profilePhoto: json['profilePhoto'],
       createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
+      updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : null,
     );
   }
 }

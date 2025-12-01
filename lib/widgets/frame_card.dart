@@ -1,5 +1,7 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import '../core/config/api_config.dart';
+import 'package:http/http.dart' as http;
+import '../core/config/api_config.dart';   // <- contains ApiUrl.baseBackendUrl
 import '../models/frame_model.dart';
 
 class FrameCard extends StatelessWidget {
@@ -16,8 +18,41 @@ class FrameCard extends StatelessWidget {
     this.showShape = false,
   });
 
+  /* -------------------------------------------------
+   * 1.  PUBLIC IMAGE URL  (fast path)
+   * 2.  FALLBACK: download bytes via auth endpoint
+   * ------------------------------------------------- */
+  Future<Uint8List?> _fetchImageBytes() async {
+    if (frame.imageUrls.isNotEmpty) {
+      // Try public URL first
+      try {
+        final res = await http.get(Uri.parse(frame.imageUrls.first));
+        if (res.statusCode == 200) return res.bodyBytes;
+      } catch (_) {}
+    }
+
+    // Fallback: authenticated endpoint
+    final url =
+        '${ApiUrl.baseBackendUrl}/frames/images/${frame.id}/0'; // no brackets
+    try {
+      final res = await http.get(
+        Uri.parse(url),
+      );
+      if (res.statusCode == 200) return res.bodyBytes;
+    } catch (_) {}
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    debugPrint('🔍 FrameCard >>> '
+        'id=${frame.id} | '
+        'name=${frame.name} | '
+        'shape=${frame.shape} | '
+        'imageUrls=${frame.imageUrls} |'
+        'image=${ApiUrl.baseBackendUrl}/frames/images/${frame.id}/0'
+    );
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
@@ -35,26 +70,38 @@ class FrameCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Frame image
-              Container(
+              /* ---------- IMAGE AREA ---------- */
+              SizedBox(
                 height: 60,
                 width: double.infinity,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  image: DecorationImage(
-                    image: NetworkImage(
-                      '${ApiUrl.baseUrl}/frame_image/${frame.filename}',
-                    ),
-                    fit: BoxFit.contain,
-                    onError: (exception, stackTrace) {
-                      // Handle image loading errors
-                    },
-                  ),
+                child: FutureBuilder<Uint8List?>(
+                  future: _fetchImageBytes(),
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                          child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2)));
+                    }
+                    if (snap.hasData && snap.data != null) {
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(
+                          snap.data!,
+                          fit: BoxFit.contain,
+                        ),
+                      );
+                    }
+                    // error / no data
+                    return const Icon(Icons.broken_image,
+                        size: 60, color: Colors.grey);
+                  },
                 ),
               ),
               const SizedBox(height: 8),
 
-              // Frame name
+              /* ---------- NAME ---------- */
               Text(
                 frame.name,
                 style: TextStyle(
@@ -67,18 +114,19 @@ class FrameCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
 
-              // Frame shape (if enabled)
-              if (showShape && frame.shape != null && frame.shape!.isNotEmpty)
+              /* ---------- SHAPE CHIP ---------- */
+              if (showShape && frame.shape.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: _getShapeColor(frame.shape!),
+                      color: _getShapeColor(frame.shape),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      frame.shape!,
+                      frame.shape,
                       style: const TextStyle(
                         fontSize: 10,
                         color: Colors.white,

@@ -15,7 +15,11 @@ import time
 import base64
 import datetime
 
-from overlay import overlay_glasses_with_handles, load_glasses
+from overlay import overlay_glasses_with_handles, load_glasses, load_glasses_from_bytes
+import requests
+
+# Backend configuration for remote frames
+BACKEND_URL = os.environ.get('FRAMES_BACKEND_URL', 'http://192.168.1.80:9000')
 
 # -------------------- Setup --------------------
 warnings.filterwarnings("ignore", category=UserWarning, module='google.protobuf')
@@ -24,11 +28,24 @@ app = Flask(__name__, template_folder='templates')
 CORS(app)  # Enable CORS for all routes
 
 app.config['UPLOAD_FOLDER'] = 'uploads/'
-app.config['FRAMES_FOLDER'] = 'frames/'
 app.config['ALLOWED_EXTENSIONS'] = {'jpg', 'jpeg', 'png'}
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs(app.config['FRAMES_FOLDER'], exist_ok=True)
+
+# Remove any legacy local frames images — local storage is deprecated.
+LEGACY_FRAMES_DIR = 'frames'
+if os.path.exists(LEGACY_FRAMES_DIR):
+    try:
+        for fname in os.listdir(LEGACY_FRAMES_DIR):
+            if fname.lower().endswith(('.png', '.jpg', '.jpeg')):
+                path = os.path.join(LEGACY_FRAMES_DIR, fname)
+                try:
+                    os.remove(path)
+                    print(f"Removed legacy frame image: {path}")
+                except Exception as e:
+                    print(f"Warning: could not remove legacy frame {path}: {e}")
+    except Exception as e:
+        print(f"Warning: error while cleaning legacy frames folder: {e}")
 
 # -------------------- MediaPipe & Model --------------------
 # Initialize MediaPipe Face Landmarker
@@ -59,6 +76,8 @@ FACE_SHAPE_RECOMMENDATIONS = {
     "Round": ["Rectangle", "Square", "Wayfarer", "Cat-eye", "Browline"],
     "Square": ["Round", "Oval", "Aviator", "Butterfly", "Rimless"]
 }
+
+# NOTE: IMAGE_CHART removed — recommendations now compare frame['shape']
 
 # -------------------- Distance Calibration --------------------
 STANDARD_FACE_WIDTH_50CM = 0.25
@@ -146,84 +165,164 @@ def analyze_frame_shape(frame_path):
         print(f"Error analyzing frame {frame_path}: {e}")
         return "Unknown"
 
-def get_all_frame_shapes(frames_folder):
-    """
-    Analyze all frames in the folder and return their shapes
-    """
-    frame_shapes = {}
-
-    if not os.path.exists(frames_folder):
-        return frame_shapes
-
-    for filename in os.listdir(frames_folder):
-        if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-            frame_path = os.path.join(frames_folder, filename)
-            shape = analyze_frame_shape(frame_path)
-            frame_shapes[filename] = shape
-            print(f"Frame: {filename} → Shape: {shape}")
-
-    return frame_shapes
-
-# Analyze frames at startup
-print("Analyzing frame shapes...")
-frame_shapes_map = get_all_frame_shapes(app.config['FRAMES_FOLDER'])
-print("Frame analysis complete!")
+# We no longer analyze or store frames locally. All frames come from backend.
+frame_shapes_map = {}
 
 # -------------------- Frame Management --------------------
 def get_available_frames():
-    """Get list of available glass frames from frames folder with their shapes"""
-    frames = []
-    frames_folder = app.config['FRAMES_FOLDER']
-    if os.path.exists(frames_folder):
-        for file in os.listdir(frames_folder):
-            if file.lower().endswith(('.png', '.jpg', '.jpeg')):
-                frame_name = os.path.splitext(file)[0].replace('_', ' ').title()
-                frame_shape = frame_shapes_map.get(file, "Unknown")
-
+    """Get list of available glass frames from backend API."""
+    try:
+        resp = requests.get(f"{BACKEND_URL}/api/frames", timeout=3)
+        if resp.ok:
+            payload = resp.json()
+            frames_data = payload.get('data', [])
+            frames = []
+            for f in frames_data:
+                fid = str(f.get('_id', ''))
+                name = f.get('name', fid)
+                shape = f.get('shape', 'Unknown')
+                
+                # FIX: Get overlay image URL - your backend uses 'overlayImage' field
+                overlay_image_data = f.get('overlayImage', {})
+                if overlay_image_data:
+                    # Construct overlay URL using the frame ID
+                    overlay_url = f"{BACKEND_URL}/api/frames/images/{fid}/overlay"
+                else:
+                    overlay_url = None
+                
+                # FIX: Get display images
+                image_urls = []
+                images_data = f.get('images', [])
+                for idx, img_data in enumerate(images_data):
+                    image_urls.append(f"{BACKEND_URL}/api/frames/images/{fid}/{idx}")
+                
                 frames.append({
-                    'filename': file,
-                    'path': os.path.join(frames_folder, file),
-                    'name': frame_name,
-                    'shape': frame_shape
+                    'id': fid,
+                    'filename': fid,  # Use ID as filename for compatibility
+                    'name': name,
+                    'shape': shape,
+                    'overlay_url': overlay_url,
+                    'image_urls': image_urls,
+                    'remote': True,
+                    'brand': f.get('brand', ''),
+                    'price': f.get('price', 0),
+                    'description': f.get('description', '')
                 })
-    return frames
+            return frames
+    except Exception as e:
+        print(f"Warning: could not fetch frames from backend ({BACKEND_URL}): {e}")
+
+    return []
+
+
+def find_frame_entry(identifier):
+    """Find a frame entry in current available frames by filename, id or name."""
+    entries = get_available_frames()
+    for e in entries:
+        if identifier == e.get('filename') or identifier == e.get('id') or identifier == e.get('name'):
+            return e
+    return None
+
+
+def load_glasses_from_url(url, filename=None):
+    """Download overlay image from URL and load it into an RGBA image using overlay helper."""
+    try:
+        if not url:
+            raise ValueError("No URL provided")
+            
+        print(f"Loading glasses from URL: {url}")
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.content
+        
+        if len(data) == 0:
+            raise ValueError("Empty response from server")
+            
+        print(f"Successfully downloaded {len(data)} bytes for {filename or 'unknown'}")
+        return load_glasses_from_bytes(data, filename=filename)
+    except Exception as e:
+        print(f"Error fetching overlay image from {url}: {e}")
+        raise
 
 def get_recommended_frames(face_shape):
-    """Get recommended ACTUAL frame files based on face shape"""
+    """Return frames whose `shape` matches the recommended shapes for the detected face shape.
+
+    The backend stores frame.shape values in a lowercase/underscore format
+    (for example: 'round', 'rectangle', 'cate_eye', 'wayfarer'). This function
+    normalizes both the recommended names and the backend values so they can
+    be compared reliably. Only frames that match the recommended shapes are
+    returned (up to 5), ordered by recommendation priority.
+    """
     recommended_shapes = FACE_SHAPE_RECOMMENDATIONS.get(face_shape, [])
+    if not recommended_shapes:
+        return []
+
+    def _normalize_name(name: str) -> str:
+        if not name:
+            return ''
+        n = name.strip().lower()
+        # Normalize common separators
+        n = n.replace('-', '_').replace(' ', '_')
+        # Map common display names to backend enum values
+        mappings = {
+            'cat_eye': 'cate_eye',
+            'cat-eye': 'cate_eye',
+            'cateye': 'cate_eye',
+            'cateye': 'cate_eye',
+            'semi_rimless': 'semi_rimless',
+            'semi-rimless': 'semi_rimless',
+            'rimless': 'rimless',
+            'butterfly': 'butterfly'
+        }
+        if n in mappings:
+            return mappings[n]
+        return n
+
+    norm_recs = [_normalize_name(s) for s in recommended_shapes]
+
     all_frames = get_available_frames()
+    matched = []
 
-    recommended_frames = []
-
-    # First, try exact shape matches
     for frame in all_frames:
-        if frame['shape'] in recommended_shapes:
-            recommended_frames.append(frame)
+        frame_shape_raw = frame.get('shape') or ''
+        frame_shape_norm = _normalize_name(frame_shape_raw)
+        if frame_shape_norm in norm_recs:
+            item = frame.copy()
+            item['matched'] = True
+            item['matched_shape'] = frame_shape_raw
+            item['_match_priority'] = norm_recs.index(frame_shape_norm)
+            matched.append(item)
 
-    # If not enough matches, include similar shapes
-    if len(recommended_frames) < 3:
-        for frame in all_frames:
-            if frame not in recommended_frames and frame['shape'] != "Unknown":
-                recommended_frames.append(frame)
+    # Order by priority (according to the recommendation list)
+    matched.sort(key=lambda x: x.get('_match_priority', 999))
+    for item in matched:
+        item.pop('_match_priority', None)
 
-    # Limit to top 5 recommendations
-    return recommended_frames[:5]
+    return matched[:5]
 
 # Global variables for real-time
 current_glasses = None
 current_frame_size = 'medium'
 
-# Load default glasses
+# Load default glasses (try remote overlay first)
 available_frames = get_available_frames()
 if available_frames:
     try:
-        current_glasses = load_glasses(available_frames[0]['path'])
-        print(f"✓ Loaded default frame: {available_frames[0]['name']} (Shape: {available_frames[0]['shape']})")
+        first = available_frames[0]
+        # Only support remote overlays now
+        if first.get('remote') and first.get('overlay_url'):
+            try:
+                current_glasses = load_glasses_from_url(first['overlay_url'], filename=first.get('name'))
+            except Exception:
+                current_glasses = None
+            print(f"✓ Loaded default remote frame: {first.get('name')} (Shape: {first.get('shape')})")
+        else:
+            print(f"⚠ Default frame '{first.get('name')}' is not remote — skipped (local storage removed)")
     except Exception as e:
         print(f"✗ Error loading default frame: {e}")
         current_glasses = None
 else:
-    print("⚠ Warning: No frames found in frames folder!")
+    print("⚠ Warning: No frames found (remote or local)!")
 
 # -------------------- Face Shape Detection --------------------
 def distance_3d(p1, p2):
@@ -363,6 +462,64 @@ class FaceShapeAnalyzer:
 
 # -------------------- CLIENT CAMERA ENDPOINTS --------------------
 
+# Add this route BEFORE your other routes
+@app.route('/api/proxy/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+def proxy_to_backend(subpath):
+    """Proxy API requests to Node.js backend"""
+    try:
+        # Build the target URL
+        node_backend = 'http://192.168.1.80:9000'
+        url = f"{node_backend}/api/{subpath}"
+        
+        # Forward headers (remove Host header to avoid issues)
+        headers = {key: value for key, value in request.headers if key.lower() != 'host'}
+        
+        # Handle different request methods
+        if request.method == 'GET':
+            resp = requests.get(url, params=request.args, headers=headers)
+        elif request.method == 'POST':
+            # Handle multipart/form-data (file uploads)
+            if request.content_type and 'multipart/form-data' in request.content_type:
+                files = request.files
+                data = request.form.to_dict()
+                resp = requests.post(url, files=files, data=data, headers=headers)
+            else:
+                # Handle JSON or form data
+                data = request.get_data()
+                resp = requests.post(url, data=data, headers=headers, 
+                                   json=request.json if request.is_json else None)
+        elif request.method == 'PUT':
+            if request.content_type and 'multipart/form-data' in request.content_type:
+                files = request.files
+                data = request.form.to_dict()
+                resp = requests.put(url, files=files, data=data, headers=headers)
+            else:
+                data = request.get_data()
+                resp = requests.put(url, data=data, headers=headers,
+                                  json=request.json if request.is_json else None)
+        elif request.method == 'DELETE':
+            resp = requests.delete(url, headers=headers)
+        elif request.method == 'OPTIONS':
+            # Handle CORS preflight
+            return Response(status=200)
+        else:
+            return jsonify({'error': 'Method not allowed'}), 405
+        
+        # Return the response
+        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        response_headers = [(name, value) for (name, value) in resp.raw.headers.items() 
+                          if name.lower() not in excluded_headers]
+        
+        response = Response(resp.content, resp.status_code, response_headers)
+        return response
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Proxy error for {subpath}: {e}")
+        return jsonify({'error': f'Backend connection failed: {str(e)}'}), 500
+    except Exception as e:
+        print(f"Unexpected proxy error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
 @app.route('/client_camera')
 def client_camera():
     """Client camera version - uses client's camera instead of server camera"""
@@ -404,15 +561,17 @@ def api_process_frame():
         frame_filename = data.get('frame', '')
         size_key = data.get('size', 'medium')
 
-        # Load selected glasses if frame is specified
+        # Load selected glasses if frame is specified (support remote frames)
         selected_glasses = None
         if frame_filename:
-            frame_path = os.path.join(app.config['FRAMES_FOLDER'], frame_filename)
+            entry = find_frame_entry(frame_filename)
+            if not entry or not entry.get('remote') or not entry.get('overlay_url'):
+                return jsonify({'success': False, 'error': 'Frame not available'})
             try:
-                selected_glasses = load_glasses(frame_path)
-                print(f"Loaded frame: {frame_filename}")
+                selected_glasses = load_glasses_from_url(entry['overlay_url'], filename=entry.get('name'))
+                print(f"Loaded remote frame: {frame_filename}")
             except Exception as e:
-                print(f"Error loading frame {frame_filename}: {e}")
+                print(f"Error loading remote frame {frame_filename}: {e}")
                 return jsonify({'success': False, 'error': f'Error loading frame: {str(e)}'})
 
         # Process frame with MediaPipe
@@ -598,12 +757,14 @@ def api_try_frame():
         frame_filename = request.form.get('frame', '')
         size_key = request.form.get('size', 'medium')
 
-        # Load selected glasses if provided
+        # Load selected glasses if provided — only remote frames supported
         selected_glasses = None
         if frame_filename:
-            frame_path = os.path.join(app.config['FRAMES_FOLDER'], frame_filename)
+            entry = find_frame_entry(frame_filename)
+            if not entry or not entry.get('remote') or not entry.get('overlay_url'):
+                return jsonify({'success': False, 'error': 'Frame not available'})
             try:
-                selected_glasses = load_glasses(frame_path)
+                selected_glasses = load_glasses_from_url(entry['overlay_url'], filename=entry.get('name'))
             except Exception as e:
                 return jsonify({'success': False, 'error': f'Error loading frame: {e}'})
 
@@ -730,10 +891,15 @@ def upload_file():
                                            error=error, frames=frames, selected_frame=selected_frame,
                                            frame_sizes=FRAME_SIZES, selected_size=selected_size)
 
-                # Load selected glasses
-                selected_frame_path = os.path.join(app.config['FRAMES_FOLDER'], selected_frame)
+                # Load selected glasses (only remote frames supported)
+                entry = find_frame_entry(selected_frame)
+                if not entry or not entry.get('remote') or not entry.get('overlay_url'):
+                    error = "Selected frame not available"
+                    return render_template('upload.html', face_shape=face_shape, file_url=file_url,
+                                           error=error, frames=frames, selected_frame=selected_frame,
+                                           frame_sizes=FRAME_SIZES, selected_size=selected_size)
                 try:
-                    selected_glasses = load_glasses(selected_frame_path)
+                    selected_glasses = load_glasses_from_url(entry['overlay_url'], filename=entry.get('name'))
                 except Exception as e:
                     error = f"Error loading selected frame: {str(e)}"
                     return render_template('upload.html', face_shape=face_shape, file_url=file_url,
@@ -832,10 +998,11 @@ def change_frame():
     if not frame_filename:
         return jsonify({'success': False, 'error': 'No frame specified'})
 
-    frame_path = os.path.join(app.config['FRAMES_FOLDER'], frame_filename)
-
+    entry = find_frame_entry(frame_filename)
+    if not entry or not entry.get('remote') or not entry.get('overlay_url'):
+        return jsonify({'success': False, 'error': 'Frame not available'})
     try:
-        current_glasses = load_glasses(frame_path)
+        current_glasses = load_glasses_from_url(entry['overlay_url'], filename=entry.get('name'))
         current_frame_size = size_key
         return jsonify({'success': True, 'message': 'Frame changed successfully'})
     except Exception as e:
@@ -853,8 +1020,8 @@ def uploaded_file(filename):
 
 @app.route('/frame_image/<filename>')
 def frame_image(filename):
-    """Serve original frame images from frames folder"""
-    return send_from_directory(app.config['FRAMES_FOLDER'], filename)
+    """Local frame images removed — this endpoint is disabled."""
+    return jsonify({'success': False, 'error': 'Local frame images have been removed; use backend frames instead.'}), 404
 
 # -------------------- Legacy Server Camera (Optional - Can be removed) --------------------
 
@@ -862,6 +1029,75 @@ def frame_image(filename):
 def video_feed():
     """Legacy server camera feed (optional)"""
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/frame_management/add')
+def add_frame():
+    """Add new frame page"""
+    return render_template('frame_form.html', 
+                          edit_mode=False, 
+                          frame={},
+                          FLASK_BASE_URL=request.host_url.rstrip('/'),
+                          USE_PROXY=True,  # Tell template to use proxy
+                          NODE_BACKEND_URL=request.host_url.rstrip('/'))  # Use Flask URL for API
+
+@app.route('/frame_management/edit/<frame_id>')
+def edit_frame(frame_id):
+    """Edit existing frame page"""
+    try:
+        # Use proxy to get frame data
+        response = requests.get(f"http://192.168.1.80:9000/api/frames/{frame_id}")
+        
+        if not response.ok:
+            return "Frame not found", 404
+        
+        data = response.json()
+        
+        if not data.get('success'):
+            return "Frame not found", 404
+        
+        frame_data = data.get('data', {})
+        
+        # Prepare frame object
+        frame = {
+            'id': frame_id,
+            'name': frame_data.get('name', ''),
+            'brand': frame_data.get('brand', ''),
+            'price': frame_data.get('price', ''),
+            'quantity': frame_data.get('quantity', 0),
+            'type': frame_data.get('type', ''),
+            'shape': frame_data.get('shape', ''),
+            'size': frame_data.get('size', ''),
+            'description': frame_data.get('description', ''),
+            'colors': frame_data.get('colors', []),
+            'mainCategory': frame_data.get('mainCategory', {}),
+            'subCategory': frame_data.get('subCategory', {})
+        }
+        
+        # Get image URLs through proxy
+        if frame_data.get('_id'):
+            base_url = f"{request.host_url.rstrip('/')}/api/proxy/frames/images"
+            frame_id_val = frame_data['_id']
+            
+            # Product images
+            image_urls = []
+            if frame_data.get('images'):
+                for i in range(len(frame_data['images'])):
+                    image_urls.append(f"{base_url}/{frame_id_val}/{i}")
+            frame['image_urls'] = image_urls
+            
+            # Overlay image
+            if frame_data.get('overlayImage'):
+                frame['overlay_url'] = f"{base_url}/{frame_id_val}/overlay"
+        
+        return render_template('frame_form.html', 
+                          edit_mode=True, 
+                          frame=frame,
+                          FLASK_BASE_URL=request.host_url.rstrip('/'),
+                          USE_PROXY=True,
+                          NODE_BACKEND_URL=request.host_url.rstrip('/'))
+    except Exception as e:
+        print(f"Error loading frame for edit: {e}")
+        return "Error loading frame", 500
 
 def generate_frames():
     """Legacy server camera frame generator"""
@@ -940,4 +1176,19 @@ if __name__ == '__main__':
     print("  /client_camera - Client camera try-on (RECOMMENDED)")
     print("  /real_time     - Legacy server camera try-on")
     print("  /upload        - Upload image for try-on")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Optional HTTPS support: set environment variables to enable
+    # USE_HTTPS=true, SSL_CERT_PATH and SSL_KEY_PATH (paths to .pem files)
+    use_https = os.environ.get('USE_HTTPS', 'false').lower() in ('1', 'true', 'yes')
+    ssl_cert = os.environ.get('SSL_CERT_PATH', '')
+    ssl_key = os.environ.get('SSL_KEY_PATH', '')
+
+    if use_https:
+        if ssl_cert and ssl_key and os.path.exists(ssl_cert) and os.path.exists(ssl_key):
+            print(f"Running with HTTPS using cert={ssl_cert} key={ssl_key}")
+            app.run(debug=True, host='0.0.0.0', port=5000, ssl_context=(ssl_cert, ssl_key))
+        else:
+            print("USE_HTTPS is set but SSL_CERT_PATH or SSL_KEY_PATH is missing or files do not exist.")
+            print("Falling back to HTTP. To enable HTTPS, generate cert/key and set SSL_CERT_PATH and SSL_KEY_PATH.")
+            app.run(debug=True, host='0.0.0.0', port=5000)
+    else:
+        app.run(debug=True, host='0.0.0.0', port=5000)
