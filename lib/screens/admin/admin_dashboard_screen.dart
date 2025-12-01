@@ -1,3 +1,4 @@
+// screens/admin/admin_dashboard_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
@@ -6,11 +7,13 @@ import '../../core/config/api_config.dart';
 import '../../providers/auth_provider.dart';
 import '../../routes.dart';
 import 'user_management_screen.dart';
-import 'add_user_screen.dart';
 import 'main_category_management_screen.dart';
+import 'frame_management_screen.dart'; // Add this import
 import '../../services/admin_service.dart';
+import '../../services/frame_service.dart'; // Add this import
 import '../../models/api_response.dart';
 import '../../models/user_model.dart';
+import '../../models/frame_model.dart'; // Add this import
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({Key? key}) : super(key: key);
@@ -21,8 +24,18 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final AdminService _adminService = AdminService();
+  final FrameService _frameService = FrameService(); // Add this
   List<UserModel> _users = [];
+  List<Frame> _frames = []; // Add frames list
   bool _isLoading = true;
+
+  // Make these variables mutable
+  int _totalProducts = 0;
+  int _totalOrders = 89;
+  double _revenue = 12456.0;
+  int _pendingOrders = 23;
+  int _lowStockProducts = 0;
+  int _outOfStockProducts = 0;
 
   Map<String, String> _systemStatus = {
     'server': 'Checking...',
@@ -44,16 +57,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     });
 
     try {
-      final ApiResponse response = await _adminService.getAllUsers();
-      if (response.success == true) {
+      // Load users
+      final ApiResponse userResponse = await _adminService.getAllUsers();
+      if (userResponse.success == true) {
         setState(() {
-          _users = (response.data?['users'] as List? ?? [])
+          _users = (userResponse.data?['users'] as List? ?? [])
               .map((userData) => UserModel.fromJson(userData))
               .toList();
         });
       } else {
-        _showErrorDialog(response.error ?? 'Failed to load dashboard data');
+        _showErrorDialog(userResponse.error ?? 'Failed to load users');
       }
+
+      // Load frames for statistics
+      final ApiResponse frameResponse = await _frameService.getAllFrames();
+      if (frameResponse.success == true) {
+        final framesData = frameResponse.data?['data'] as List? ?? [];
+        setState(() {
+          _frames = framesData.map((frameData) => Frame.fromJson(frameData)).toList();
+          _calculateStatistics(); // Calculate real-time statistics
+        });
+      }
+
     } catch (e) {
       _showErrorDialog('Network error: $e');
     } finally {
@@ -61,6 +86,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  void _calculateStatistics() {
+    // Calculate real statistics from frames data
+    _totalProducts = _frames.length;
+    _lowStockProducts = _frames.where((frame) => frame.quantity < 10 && frame.quantity > 0).length;
+    _outOfStockProducts = _frames.where((frame) => frame.quantity == 0).length;
+
+    // Calculate total inventory value
+    _revenue = _frames.fold(0.0, (sum, frame) => sum + (frame.price * frame.quantity));
+
+    // You can add more calculations here based on your business logic
   }
 
   Future<void> _checkSystemStatus() async {
@@ -173,12 +210,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int get _activeUsers => _users.where((user) => user.isActive).length;
   int get _suspendedUsers => _users.where((user) => user.isSuspended).length;
 
-  // For demo purposes - you can replace with real data later
-  int get _totalProducts => 567;
-  int get _totalOrders => 89;
-  double get _revenue => 12456.0;
-  int get _pendingOrders => 23;
-  int get _lowStockProducts => 12;
+  // Calculate percentage changes (you can replace with real data)
+  String get _userGrowthPercentage {
+    // For demo - calculate based on previous data or use fixed value
+    return '+12%';
+  }
+
+  String get _productGrowthPercentage {
+    return '+8%';
+  }
+
+  String get _revenueGrowthPercentage {
+    return '+15%';
+  }
 
   Color _getStatusColor(String status) {
     switch (status) {
@@ -310,14 +354,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     _totalUsers.toString(),
                     Icons.people,
                     Colors.blue,
-                    '+12% from last month',
+                    _userGrowthPercentage + ' from last month',
                   ),
                   _buildStatCard(
-                    'Total Products',
+                    'Total Frames',
                     _totalProducts.toString(),
                     Icons.inventory,
                     Colors.green,
-                    '+8% from last month',
+                    _productGrowthPercentage + ' from last month',
                   ),
                   _buildStatCard(
                     'Total Orders',
@@ -327,11 +371,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     '+23% from last month',
                   ),
                   _buildStatCard(
-                    'Revenue',
+                    'Inventory Value',
                     '\$${_revenue.toStringAsFixed(0)}',
                     Icons.attach_money,
                     Colors.purple,
-                    '+15% from last month',
+                    _revenueGrowthPercentage + ' from last month',
                   ),
                   _buildStatCard(
                     'Pending Orders',
@@ -345,7 +389,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     _lowStockProducts.toString(),
                     Icons.warning,
                     Colors.red,
-                    'Products need restock',
+                    'Frames need restock',
                   ),
                 ],
               ),
@@ -409,21 +453,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     },
                   ),
                   _buildAdminCard(
-                    'Add New User',
-                    Icons.person_add,
-                    Colors.green,
-                        () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const AddUserScreen(),
-                        ),
-                      ).then((_) {
-                        _loadDashboardData();
-                      });
-                    },
-                  ),
-                  _buildAdminCard(
                     'Category Management',
                     Icons.category,
                     Colors.teal,
@@ -437,11 +466,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     },
                   ),
                   _buildAdminCard(
-                    'Product Catalog',
+                    'Frame Management',
                     Icons.inventory,
                     Colors.orange,
                         () {
-                      _showComingSoonDialog('Product Catalog');
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const FrameManagementScreen(),
+                        ),
+                      );
                     },
                   ),
                   _buildAdminCard(
@@ -574,8 +608,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             'time': _getTimeAgo(user.createdAt),
             'color': Colors.green,
           },
-      // Fallback activities if no users
-      if (recentUsers.isEmpty) ...[
+      // Add frame-related activities
+      if (_frames.isNotEmpty)
+        for (final frame in _frames.take(2))
+          {
+            'icon': Icons.inventory,
+            'text': 'New frame: ${frame.name}',
+            'time': _getTimeAgo(frame.createdAt),
+            'color': Colors.blue,
+          },
+      // Fallback activities if no users/frames
+      if (recentUsers.isEmpty && _frames.isEmpty) ...[
         {
           'icon': Icons.person_add,
           'text': 'New user registered: john_doe',
@@ -590,21 +633,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         },
         {
           'icon': Icons.inventory,
-          'text': 'Product "Classic Glasses" low stock',
+          'text': 'Frame "${_frames.isNotEmpty ? _frames.first.name : 'Classic Glasses'}" low stock',
           'time': '10 min ago',
           'color': Colors.orange
-        },
-        {
-          'icon': Icons.payment,
-          'text': 'Payment received for order #12344',
-          'time': '15 min ago',
-          'color': Colors.green
-        },
-        {
-          'icon': Icons.warning,
-          'text': 'System backup completed',
-          'time': '1 hour ago',
-          'color': Colors.purple
         },
       ]
     ];
@@ -674,9 +705,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const SizedBox(width: 12),
           _buildQuickActionCard('Add Category', Icons.category, Colors.green),
           const SizedBox(width: 12),
-          _buildQuickActionCard('View Reports', Icons.analytics, Colors.orange),
+          _buildQuickActionCard('Add Frame', Icons.add, Colors.orange),
           const SizedBox(width: 12),
-          _buildQuickActionCard('Send Email', Icons.email, Colors.purple),
+          _buildQuickActionCard('View Reports', Icons.analytics, Colors.purple),
           const SizedBox(width: 12),
           _buildQuickActionCard('Backup', Icons.backup, Colors.red),
         ],

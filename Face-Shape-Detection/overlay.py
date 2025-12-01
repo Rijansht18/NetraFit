@@ -1,79 +1,114 @@
 # overlay.py
-
 import cv2
 import numpy as np
 import os
 
+
 def load_glasses(path):
-    """Load a glasses image with automatic background removal and handle removal"""
+    """Load a glasses image with automatic background removal and handle removal (from file path)."""
     try:
         if not os.path.exists(path):
             raise FileNotFoundError(f"Glasses image not found: {path}")
-        
+
         img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
         if img is None:
             raise ValueError(f"Could not load image: {path}")
-        
+
         print(f"✓ Successfully loaded frame: {os.path.basename(path)}")
-        
+
         # If image has background (3 channels), remove it
         if img.shape[2] == 3:
             img = remove_background_simple(img)
         else:
             # For images with alpha channel, just clean it up
             img = clean_existing_alpha(img)
-        
+
         # Remove handles from the glasses
         img = remove_handles_simple(img)
-        
+
         return img
     except Exception as e:
         print(f"✗ Error loading frame {path}: {e}")
         raise
 
+
+def load_glasses_from_bytes(data_bytes, filename=None):
+    """Load glasses image from raw bytes (e.g., downloaded from backend).
+
+    Returns an RGBA image suitable for `overlay_glasses_with_handles`.
+    """
+    try:
+        nparr = np.frombuffer(data_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+        if img is None:
+            raise ValueError("Could not decode image bytes")
+
+        if img.ndim == 2:
+            # grayscale -> convert to BGR
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+        # Normalize channels: ensure 4 channels (BGRA)
+        if img.shape[2] == 3:
+            img = remove_background_simple(img)
+        else:
+            img = clean_existing_alpha(img)
+
+        img = remove_handles_simple(img)
+        if filename:
+            print(f"✓ Loaded frame from bytes: {filename}")
+        else:
+            print("✓ Loaded frame from bytes")
+        return img
+    except Exception as e:
+        print(f"✗ Error loading glasses from bytes: {e}")
+        raise
+
+
 def remove_background_simple(img):
     """Simple and reliable background removal"""
     # Convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
+
     # Create a mask using threshold
     _, mask = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY_INV)
-    
+
     # Clean up the mask
-    kernel = np.ones((3,3), np.uint8)
+    kernel = np.ones((3, 3), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    
+
     # Create RGBA image
     result = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
     result[:, :, 3] = mask
-    
+
     return result
+
 
 def clean_existing_alpha(img):
     """Clean up existing alpha channel"""
     alpha = img[:, :, 3]
-    
+
     # Remove very transparent pixels (background)
     _, clean_alpha = cv2.threshold(alpha, 10, 255, cv2.THRESH_BINARY)
-    
+
     # Clean up the mask
-    kernel = np.ones((2,2), np.uint8)
+    kernel = np.ones((2, 2), np.uint8)
     clean_alpha = cv2.morphologyEx(clean_alpha, cv2.MORPH_OPEN, kernel)
-    
+
     img[:, :, 3] = clean_alpha
     return img
+
 
 def remove_handles_simple(img):
     """Remove handles by keeping only the main central component"""
     alpha = img[:, :, 3]
-    
+
     # Find connected components
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(alpha, connectivity=8)
-    
+
     if num_labels < 2:
         return img  # No components found
-    
+
     # Find the largest component (main glasses frame)
     largest_component = 1
     max_area = stats[1, cv2.CC_STAT_AREA]
@@ -81,15 +116,16 @@ def remove_handles_simple(img):
         if stats[i, cv2.CC_STAT_AREA] > max_area:
             max_area = stats[i, cv2.CC_STAT_AREA]
             largest_component = i
-    
+
     # Create mask with only the largest component
     main_mask = (labels == largest_component).astype(np.uint8) * 255
-    
+
     # Apply the mask
     result = img.copy()
     result[:, :, 3] = main_mask
-    
+
     return result
+
 
 def get_head_pose(landmarks):
     """
@@ -113,6 +149,7 @@ def get_head_pose(landmarks):
     roll = (left_eyes[1] - right_eyes[1]) * 50  # Scale factor
 
     return yaw, pitch, roll
+
 
 def overlay_glasses_with_handles(frame, landmarks, glasses_img, scale_factor=1.0, debug=False):
     """
