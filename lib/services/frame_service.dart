@@ -2,12 +2,213 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import '../core/config/api_config.dart';
 import '../models/api_response.dart';
 import '../models/frame_model.dart';
 
 class FrameService {
-  static const String basePath = '${ApiUrl.baseBackendUrl}/frames';
+  static const String basePath = 'https://ar-eyewear-try-on-backend-1.onrender.com/api/frames';
+
+  final http.Client client;
+
+  FrameService({http.Client? client}) : client = client ?? http.Client();
+
+  // Get all frames
+  Future<ApiResponse> getAllFrames() async {
+    try {
+      final response = await client.get(
+        Uri.parse(basePath),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> responseData = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return ApiResponse(
+          success: true,
+          data: responseData,
+          error: null,
+        );
+      }
+
+      return ApiResponse.fromJson(responseData);
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        error: 'Network error: ${e.toString()}',
+      );
+    }
+  }
+
+  // Get frames by main category
+  Future<ApiResponse> getFramesByMainCategory(String mainCategoryId) async {
+    try {
+      final response = await client.get(
+        Uri.parse('$basePath?mainCategory=$mainCategoryId'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> responseData = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return ApiResponse(
+          success: true,
+          data: responseData,
+          error: null,
+        );
+      }
+
+      return ApiResponse.fromJson(responseData);
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        error: 'Network error: ${e.toString()}',
+      );
+    }
+  }
+
+  // Get frames by sub category
+  Future<ApiResponse> getFramesBySubCategory(String subCategoryId) async {
+    try {
+      final response = await client.get(
+        Uri.parse('$basePath?subCategory=$subCategoryId'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> responseData = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return ApiResponse(
+          success: true,
+          data: responseData,
+          error: null,
+        );
+      }
+
+      return ApiResponse.fromJson(responseData);
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        error: 'Network error: ${e.toString()}',
+      );
+    }
+  }
+
+  // Get featured frames (active frames, limited)
+  Future<ApiResponse> getFeaturedFrames({int limit = 4}) async {
+    try {
+      final response = await client.get(
+        Uri.parse('$basePath?isActive=true&limit=$limit'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> responseData = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return ApiResponse(
+          success: true,
+          data: responseData,
+          error: null,
+        );
+      }
+
+      return ApiResponse.fromJson(responseData);
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        error: 'Network error: ${e.toString()}',
+      );
+    }
+  }
+
+  // Get frame by ID
+  Future<ApiResponse> getFrameById(String frameId) async {
+    try {
+      final response = await client.get(
+        Uri.parse('$basePath/$frameId'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> responseData = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return ApiResponse(
+          success: true,
+          data: responseData,
+          error: null,
+        );
+      }
+
+      return ApiResponse.fromJson(responseData);
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        error: 'Network error: ${e.toString()}',
+      );
+    }
+  }
+
+  // Delete frame
+  Future<ApiResponse> deleteFrame(String frameId) async {
+    try {
+      final response = await client.delete(
+        Uri.parse('$basePath/$frameId'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> responseData = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return ApiResponse(
+          success: true,
+          data: responseData,
+          error: null,
+        );
+      }
+
+      return ApiResponse.fromJson(responseData);
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        error: 'Network error: ${e.toString()}',
+      );
+    }
+  }
+
+  // Get frames by categories
+  Future<ApiResponse> getFramesByCategories({
+    String? mainCategoryId,
+    String? subCategoryId,
+  }) async {
+    try {
+      final Map<String, String> queryParams = {};
+      if (mainCategoryId != null) queryParams['mainCategory'] = mainCategoryId;
+      if (subCategoryId != null) queryParams['subCategory'] = subCategoryId;
+
+      final uri = Uri.parse(basePath).replace(queryParameters: queryParams);
+
+      final response = await client.get(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> responseData = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return ApiResponse(
+          success: true,
+          data: responseData,
+          error: null,
+        );
+      }
+
+      return ApiResponse.fromJson(responseData);
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        error: 'Network error: ${e.toString()}',
+      );
+    }
+  }
 
   // Create Frame with multipart/form-data
   Future<ApiResponse> createFrameWithImages({
@@ -16,7 +217,6 @@ class FrameService {
     required XFile overlayImage,
   }) async {
     try {
-      // Create multipart request
       var request = http.MultipartRequest('POST', Uri.parse(basePath));
 
       // Add text fields
@@ -31,7 +231,7 @@ class FrameService {
       request.fields['size'] = textFields['size'] ?? '';
       request.fields['description'] = textFields['description'] ?? '';
 
-      // Add colors as comma-separated string
+      // Add colors
       if (textFields['colors'] is List) {
         final colorsList = textFields['colors'] as List<dynamic>;
         request.fields['colors'] = colorsList.join(',');
@@ -63,14 +263,12 @@ class FrameService {
       // Send request
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
-
       final responseData = json.decode(response.body);
 
       if (response.statusCode == 201) {
         return ApiResponse(
           success: true,
           data: responseData,
-          // message: responseData['message'] ?? 'Frame created successfully',
         );
       } else {
         return ApiResponse(
@@ -87,278 +285,12 @@ class FrameService {
     }
   }
 
-  // Update Frame with multipart/form-data
-  Future<ApiResponse> updateFrameWithImages({
-    required String frameId,
-    required Map<String, dynamic> textFields,
-    List<XFile>? newProductImages,
-    XFile? newOverlayImage,
-  }) async {
-    try {
-      // Create multipart request
-      var request = http.MultipartRequest('PUT', Uri.parse('$basePath/$frameId'));
-
-      // Add text fields
-      request.fields['name'] = textFields['name'] ?? '';
-      request.fields['brand'] = textFields['brand'] ?? '';
-      request.fields['mainCategory'] = textFields['mainCategory'] ?? '';
-      request.fields['subCategory'] = textFields['subCategory'] ?? '';
-      request.fields['type'] = textFields['type'] ?? '';
-      request.fields['shape'] = textFields['shape'] ?? '';
-      request.fields['price'] = (textFields['price'] ?? 0).toString();
-      request.fields['quantity'] = (textFields['quantity'] ?? 0).toString();
-      request.fields['size'] = textFields['size'] ?? '';
-      request.fields['description'] = textFields['description'] ?? '';
-
-      // Add colors as comma-separated string
-      if (textFields['colors'] is List) {
-        final colorsList = textFields['colors'] as List<dynamic>;
-        request.fields['colors'] = colorsList.join(',');
-      }
-
-      // Add new product images if provided
-      if (newProductImages != null && newProductImages.isNotEmpty) {
-        for (int i = 0; i < newProductImages.length; i++) {
-          final image = newProductImages[i];
-          final file = File(image.path);
-          request.files.add(
-            await http.MultipartFile.fromPath(
-              'images',
-              file.path,
-              filename: 'product_update_${DateTime.now().millisecondsSinceEpoch}_$i.jpg',
-            ),
-          );
-        }
-      }
-
-      // Add new overlay image if provided
-      if (newOverlayImage != null) {
-        final overlayFile = File(newOverlayImage.path);
-        request.files.add(
-          await http.MultipartFile.fromPath(
-            'overlayImage',
-            overlayFile.path,
-            filename: 'overlay_update_${DateTime.now().millisecondsSinceEpoch}.jpg',
-          ),
-        );
-      }
-
-      // Send request
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
-
-      final responseData = json.decode(response.body);
-
-      if (response.statusCode == 200) {
-        return ApiResponse(
-          success: true,
-          data: responseData,
-          // message: responseData['message'] ?? 'Frame updated successfully',
-        );
-      } else {
-        return ApiResponse(
-          success: false,
-          error: responseData['error'] ?? 'Failed to update frame',
-          data: responseData,
-        );
-      }
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        error: 'Network error: ${e.toString()}',
-      );
-    }
+  // Helper methods for image URLs
+  static String getFrameImageUrl(String frameId, [int imageIndex = 0]) {
+    return 'https://ar-eyewear-try-on-backend-1.onrender.com/api/frames/images/$frameId/$imageIndex';
   }
 
-  // Simple JSON methods (without images)
-  Future<ApiResponse> createFrame(Map<String, dynamic> frameData) async {
-    try {
-      final response = await http.post(
-        Uri.parse(basePath),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(frameData),
-      ).timeout(const Duration(seconds: 30));
-
-      final Map<String, dynamic> responseData = json.decode(response.body);
-
-      if (response.statusCode == 201) {
-        return ApiResponse(
-          success: true,
-          data: responseData,
-          error: null,
-        );
-      }
-
-      return ApiResponse.fromJson(responseData);
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        error: 'Network error: ${e.toString()}',
-      );
-    }
-  }
-
-  Future<ApiResponse> updateFrame(String frameId, Map<String, dynamic> frameData) async {
-    try {
-      final response = await http.put(
-        Uri.parse('$basePath/$frameId'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(frameData),
-      ).timeout(const Duration(seconds: 30));
-
-      final Map<String, dynamic> responseData = json.decode(response.body);
-
-      if (response.statusCode == 200) {
-        return ApiResponse(
-          success: true,
-          data: responseData,
-          error: null,
-        );
-      }
-
-      return ApiResponse.fromJson(responseData);
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        error: 'Network error: ${e.toString()}',
-      );
-    }
-  }
-
-  // Keep existing methods as they are
-  Future<ApiResponse> getAllFrames() async {
-    try {
-      final response = await http.get(
-        Uri.parse(basePath),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 30));
-
-      final Map<String, dynamic> responseData = json.decode(response.body);
-
-      if (response.statusCode == 200) {
-        return ApiResponse(
-          success: true,
-          data: responseData,
-          error: null,
-        );
-      }
-
-      return ApiResponse.fromJson(responseData);
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        error: 'Network error: ${e.toString()}',
-      );
-    }
-  }
-
-  Future<ApiResponse> getFrameById(String frameId) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$basePath/$frameId'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 30));
-
-      final Map<String, dynamic> responseData = json.decode(response.body);
-
-      if (response.statusCode == 200) {
-        return ApiResponse(
-          success: true,
-          data: responseData,
-          error: null,
-        );
-      }
-
-      return ApiResponse.fromJson(responseData);
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        error: 'Network error: ${e.toString()}',
-      );
-    }
-  }
-
-  Future<ApiResponse> deleteFrame(String frameId) async {
-    try {
-      final response = await http.delete(
-        Uri.parse('$basePath/$frameId'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 30));
-
-      final Map<String, dynamic> responseData = json.decode(response.body);
-
-      if (response.statusCode == 200) {
-        return ApiResponse(
-          success: true,
-          data: responseData,
-          error: null,
-        );
-      }
-
-      return ApiResponse.fromJson(responseData);
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        error: 'Network error: ${e.toString()}',
-      );
-    }
-  }
-
-  Future<ApiResponse> getFramesByCategory({String? mainCategoryId, String? subCategoryId}) async {
-    try {
-      final Map<String, String> queryParams = {};
-      if (mainCategoryId != null) queryParams['mainCategoryId'] = mainCategoryId;
-      if (subCategoryId != null) queryParams['subCategoryId'] = subCategoryId;
-
-      final uri = Uri.parse('$basePath/category').replace(queryParameters: queryParams);
-
-      final response = await http.get(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 30));
-
-      final Map<String, dynamic> responseData = json.decode(response.body);
-
-      if (response.statusCode == 200) {
-        return ApiResponse(
-          success: true,
-          data: responseData,
-          error: null,
-        );
-      }
-
-      return ApiResponse.fromJson(responseData);
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        error: 'Network error: ${e.toString()}',
-      );
-    }
-  }
-
-  Future<ApiResponse> getAvailableSizes() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$basePath/sizes/available'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 30));
-
-      final Map<String, dynamic> responseData = json.decode(response.body);
-
-      if (response.statusCode == 200) {
-        return ApiResponse(
-          success: true,
-          data: responseData,
-          error: null,
-        );
-      }
-
-      return ApiResponse.fromJson(responseData);
-    } catch (e) {
-      return ApiResponse(
-        success: false,
-        error: 'Network error: ${e.toString()}',
-      );
-    }
+  static String getFrameOverlayUrl(String frameId) {
+    return 'https://ar-eyewear-try-on-backend-1.onrender.com/api/frames/overlay/$frameId';
   }
 }

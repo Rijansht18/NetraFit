@@ -16,7 +16,65 @@ class CategoryService {
       final response = await client.get(
         Uri.parse('$baseUrl/main-categories'),
         headers: {'Content-Type': 'application/json'},
-      ).timeout(Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 10));
+
+      final Map<String, dynamic> responseData = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return ApiResponse(
+          success: true,
+          data: responseData,
+          error: null,
+        );
+      }
+
+      return ApiResponse.fromJson(responseData);
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        error: 'Network error: ${e.toString()}',
+      );
+    }
+  }
+
+  static String getFrameImageUrl(String frameId, [int index = 0]) {
+    return '$baseUrl/frames/images/$frameId/$index';
+  }
+
+  // Get frames by main category ID
+  Future<ApiResponse> getFramesByMainCategory(String mainCategoryId) async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/frames?mainCategory=$mainCategoryId'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
+
+      final Map<String, dynamic> responseData = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return ApiResponse(
+          success: true,
+          data: responseData,
+          error: null,
+        );
+      }
+
+      return ApiResponse.fromJson(responseData);
+    } catch (e) {
+      return ApiResponse(
+        success: false,
+        error: 'Network error: ${e.toString()}',
+      );
+    }
+  }
+
+  // Get all frames (for featured products)
+  Future<ApiResponse> getAllFrames() async {
+    try {
+      final response = await client.get(
+        Uri.parse('$baseUrl/frames'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
 
       final Map<String, dynamic> responseData = json.decode(response.body);
 

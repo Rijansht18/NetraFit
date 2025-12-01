@@ -1,4 +1,3 @@
-// lib/models/frame_model.dart
 import 'package:intl/intl.dart';
 
 class Frame {
@@ -52,6 +51,32 @@ class Frame {
     // Parse ID
     final id = (json['_id'] ?? json['id'] ?? '').toString();
 
+    // Debug mainCategory parsing
+    print('\n=== Parsing Frame: ${json['name']} ===');
+    print('Raw mainCategory data type: ${json['mainCategory']?.runtimeType}');
+    print('Raw mainCategory data: ${json['mainCategory']}');
+
+    // Parse main category
+    String parseMainCategory(dynamic mc) {
+      if (mc == null) return '';
+      if (mc is String) return mc;
+      if (mc is Map) {
+        final id = mc['_id']?.toString() ?? '';
+        print('Parsed mainCategory ID from object: $id');
+        return id;
+      }
+      return '';
+    }
+
+    String? parseMainCategoryName(dynamic mc) {
+      if (mc == null) return null;
+      if (mc is String) return mc;
+      if (mc is Map) {
+        return mc['name']?.toString();
+      }
+      return null;
+    }
+
     // Parse name and filename
     final name = (json['name'] ?? '').toString();
     final filename = (json['filename'] != null && json['filename'].toString().isNotEmpty)
@@ -81,11 +106,8 @@ class Frame {
       if (d == null) return DateTime.now();
       if (d is DateTime) return d;
       if (d is String) {
-        // Try parsing ISO string
         final parsed = DateTime.tryParse(d);
         if (parsed != null) return parsed;
-
-        // Try parsing from milliseconds
         final millis = int.tryParse(d);
         if (millis != null) {
           return DateTime.fromMillisecondsSinceEpoch(millis);
@@ -109,16 +131,6 @@ class Frame {
       return [];
     }
 
-    // Parse main category
-    String parseMainCategory(dynamic mc) {
-      if (mc == null) return '';
-      if (mc is String) return mc;
-      if (mc is Map) {
-        return mc['_id']?.toString() ?? '';
-      }
-      return '';
-    }
-
     // Parse sub category
     String parseSubCategory(dynamic sc) {
       if (sc == null) return '';
@@ -129,14 +141,6 @@ class Frame {
       return '';
     }
 
-    // Parse category names
-    String? parseMainCategoryName(dynamic mc) {
-      if (mc is Map) {
-        return mc['name']?.toString();
-      }
-      return null;
-    }
-
     String? parseSubCategoryName(dynamic sc) {
       if (sc is Map) {
         return sc['name']?.toString();
@@ -144,72 +148,18 @@ class Frame {
       return null;
     }
 
-    // Parse image URLs
-    List<String> parseImageUrls(Map<String, dynamic> json, String id) {
-      final images = json['images'];
-      final imageUrls = json['imageUrls'] ?? json['image_urls'];
+    final mainCategory = parseMainCategory(json['mainCategory']);
+    final mainCategoryName = parseMainCategoryName(json['mainCategory']);
 
-      // First check imageUrls
-      if (imageUrls != null) {
-        if (imageUrls is List) {
-          return List<String>.from(imageUrls.map((url) => url?.toString() ?? '').where((url) => url.isNotEmpty));
-        }
-        if (imageUrls is String && imageUrls.isNotEmpty) {
-          return [imageUrls];
-        }
-      }
-
-      // Then check images array
-      if (images != null && images is List) {
-        final List<String> urls = [];
-        for (var i = 0; i < images.length; i++) {
-          final img = images[i];
-          if (img == null) continue;
-          if (img is String && img.isNotEmpty) {
-            urls.add(img);
-          } else if (img is Map) {
-            final url = img['url']?.toString() ?? img['data']?.toString();
-            if (url != null && url.isNotEmpty) {
-              urls.add(url);
-            }
-          }
-        }
-        return urls;
-      }
-
-      return [];
-    }
-
-    // Parse overlay URL
-    String? parseOverlayUrl(Map<String, dynamic> json, String id) {
-      final overlayImage = json['overlayImage'];
-      final overlayUrl = json['overlayUrl'] ?? json['overlay_url'];
-
-      if (overlayUrl != null && overlayUrl.toString().isNotEmpty) {
-        return overlayUrl.toString();
-      }
-
-      if (overlayImage != null) {
-        if (overlayImage is String && overlayImage.isNotEmpty) {
-          return overlayImage;
-        }
-        if (overlayImage is Map) {
-          final url = overlayImage['url']?.toString() ?? overlayImage['data']?.toString();
-          if (url != null && url.isNotEmpty) {
-            return url;
-          }
-        }
-      }
-
-      return null;
-    }
+    print('Final mainCategory ID: $mainCategory');
+    print('Final mainCategory Name: $mainCategoryName');
 
     return Frame(
       id: id,
       filename: filename,
       name: name,
       brand: (json['brand'] ?? '').toString(),
-      mainCategory: parseMainCategory(json['mainCategory']),
+      mainCategory: mainCategory,
       subCategory: parseSubCategory(json['subCategory']),
       type: (json['type'] ?? '').toString(),
       shape: (json['shape'] ?? '').toString(),
@@ -218,14 +168,96 @@ class Frame {
       colors: parseColors(json['colors']),
       size: (json['size'] ?? '').toString(),
       description: json['description']?.toString(),
-      imageUrls: parseImageUrls(json, id),
-      overlayUrl: parseOverlayUrl(json, id),
+      imageUrls: _parseImageUrls(json),
+      overlayUrl: _parseOverlayUrl(json),
       isActive: json['isActive'] is bool ? json['isActive'] as bool : (json['isActive']?.toString().toLowerCase() == 'true'),
       createdAt: parseDateTime(json['createdAt']),
       updatedAt: parseDateTime(json['updatedAt']),
-      mainCategoryName: parseMainCategoryName(json['mainCategory']),
+      mainCategoryName: mainCategoryName,
       subCategoryName: parseSubCategoryName(json['subCategory']),
     );
+  }
+
+  static List<String> _parseImageUrls(Map<String, dynamic> json) {
+    final images = json['images'];
+    final imageUrls = json['imageUrls'] ?? json['image_urls'];
+    final id = (json['_id'] ?? json['id'] ?? '').toString();
+
+    // Helper to convert path to full URL
+    String toFullUrl(String url) {
+      if (url.startsWith('http')) {
+        return url;
+      } else {
+        return 'https://ar-eyewear-try-on-backend-1.onrender.com$url';
+      }
+    }
+
+    // First check images array
+    if (images != null && images is List) {
+      final List<String> urls = [];
+      for (var i = 0; i < images.length; i++) {
+        final img = images[i];
+        if (img == null) continue;
+
+        if (img is String && img.isNotEmpty) {
+          urls.add(toFullUrl(img));
+        } else if (img is Map) {
+          final url = img['url']?.toString() ?? img['data']?.toString();
+          if (url != null && url.isNotEmpty) {
+            urls.add(toFullUrl(url));
+          }
+        }
+      }
+      if (urls.isNotEmpty) return urls;
+    }
+
+    // Then check imageUrls
+    if (imageUrls != null) {
+      if (imageUrls is List) {
+        return List<String>.from(imageUrls.map((url) {
+          if (url == null) return '';
+          return toFullUrl(url.toString());
+        }).where((url) => url.isNotEmpty));
+      }
+      if (imageUrls is String && imageUrls.isNotEmpty) {
+        return [toFullUrl(imageUrls)];
+      }
+    }
+
+    // If no images in data, use default pattern
+    return ['https://ar-eyewear-try-on-backend-1.onrender.com/api/frames/images/$id/0'];
+  }
+
+  static String? _parseOverlayUrl(Map<String, dynamic> json) {
+    final overlayImage = json['overlayImage'];
+    final overlayUrl = json['overlayUrl'] ?? json['overlay_url'];
+    final id = (json['_id'] ?? json['id'] ?? '').toString();
+
+    // Helper to convert path to full URL
+    String toFullUrl(String url) {
+      if (url.startsWith('http')) {
+        return url;
+      } else {
+        return 'https://ar-eyewear-try-on-backend-1.onrender.com$url';
+      }
+    }
+
+    if (overlayUrl != null && overlayUrl.toString().isNotEmpty) {
+      return toFullUrl(overlayUrl.toString());
+    }
+
+    if (overlayImage != null) {
+      if (overlayImage is String && overlayImage.isNotEmpty) {
+        return toFullUrl(overlayImage);
+      } else if (overlayImage is Map) {
+        final url = overlayImage['url']?.toString() ?? overlayImage['data']?.toString();
+        if (url != null && url.isNotEmpty) {
+          return toFullUrl(url);
+        }
+      }
+    }
+
+    return null;
   }
 
   static String _generateFilename(String name, String id) {
@@ -268,5 +300,26 @@ class Frame {
   bool get hasImages => imageUrls.isNotEmpty;
 
   // Helper method to get first image URL
-  String? get firstImageUrl => hasImages ? imageUrls.first : null;
+  String get firstImageUrl {
+    if (hasImages) {
+      return imageUrls.first;
+    }
+    return 'https://ar-eyewear-try-on-backend-1.onrender.com/api/frames/images/$id/0';
+  }
+
+  // Get image URL at specific index
+  String getImageUrl(int index) {
+    if (hasImages && index < imageUrls.length) {
+      return imageUrls[index];
+    }
+    return 'https://ar-eyewear-try-on-backend-1.onrender.com/api/frames/images/$id/${index.clamp(0, 3)}';
+  }
+
+  // Get overlay URL
+  String? getOverlayUrl() {
+    if (overlayUrl != null && overlayUrl!.isNotEmpty) {
+      return overlayUrl;
+    }
+    return null;
+  }
 }

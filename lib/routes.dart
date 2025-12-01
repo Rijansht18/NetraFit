@@ -4,10 +4,14 @@ import 'package:netrafit/screens/admin/user_management_screen.dart';
 import 'package:netrafit/screens/auth/reset_password1_screen.dart';
 import 'package:netrafit/screens/auth/reset_password2_screen.dart';
 import 'package:netrafit/screens/auth/reset_password3_screen.dart';
+import 'package:netrafit/screens/favorites_screen.dart';
 import 'package:netrafit/screens/onboarding/onboarding_screen.dart';
 import 'package:netrafit/screens/home_screen.dart';
 import 'package:netrafit/screens/auth/login_screen.dart';
 import 'package:netrafit/screens/auth/register_screen.dart';
+import 'package:netrafit/screens/settings_screen.dart';
+import 'package:netrafit/screens/shop_screen.dart';
+import 'package:netrafit/screens/try_on_screen.dart';
 import 'package:netrafit/widgets/protected_route.dart';
 
 class AppRoute {
@@ -15,6 +19,10 @@ class AppRoute {
   static const String loginpageroute = '/login';
   static const String registerpageroute = '/register';
   static const String homeroute = '/home';
+  static const String shoproute = '/shop';
+  static const String tryonroute = '/try-on';
+  static const String favoritesroute = '/favorites';
+  static const String settingsroute = '/settings';
   static const String onboardingroute = '/onboard';
   static const String adminDashboardRoute = '/admin/dashboard';
   static const String userManagementRoute = '/admin/users';
@@ -30,6 +38,10 @@ class AppRoute {
       loginpageroute: (context) => const LoginScreen(),
       registerpageroute: (context) => const RegisterScreen(),
       homeroute: (context) => ProtectedRoute(child: const HomeScreen()),
+      shoproute: (context) => const ShopScreen(),
+      tryonroute: (context) => const TryOnScreen(),
+      favoritesroute: (context) => const FavoritesScreen(),
+      settingsroute: (context) => const SettingsScreen(),
       onboardingroute: (context) => const OnboardingScreen(),
       adminDashboardRoute: (context) => ProtectedRoute(
         child: const AdminDashboardScreen(),
