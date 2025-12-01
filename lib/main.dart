@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:netrafit/providers/cart_provider.dart';
 import 'package:netrafit/screens/admin/admin_dashboard_screen.dart';
 import 'package:netrafit/screens/home_screen.dart';
 import 'package:netrafit/screens/onboarding/onboarding_screen.dart';
@@ -22,6 +23,7 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => FrameProvider()),
+        ChangeNotifierProvider(create: (_) => CartProvider()),
       ],
       child: MaterialApp(
         title: 'Virtual Try-On',

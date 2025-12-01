@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart'; // Add this import
 import 'package:netrafit/models/frame_model.dart';
 import 'package:netrafit/services/category_service.dart';
 import 'package:netrafit/services/frame_service.dart';
 import 'package:netrafit/widgets/common/frame_card.dart';
+import 'package:netrafit/providers/cart_provider.dart';
+import 'package:netrafit/screens/cart_screen.dart';
 
 import 'UserOrdersScreen.dart';
 
@@ -241,37 +244,52 @@ class _ShopScreenState extends State<ShopScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
-          // Cart Button
-          IconButton(
-            icon: Stack(
-              children: [
-                const Icon(Icons.shopping_cart, color: Colors.black),
-                Positioned(
-                  right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(1),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 12,
-                      minHeight: 12,
-                    ),
-                    child: const Text(
-                      '3',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
+          // Cart Button with dynamic badge
+          Consumer<CartProvider>(
+            builder: (context, cartProvider, child) {
+              final cartItemCount = cartProvider.cartItemCount;
+
+              return Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.shopping_cart, color: Colors.black),
+                    onPressed: () {
+                      // Navigate to cart
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CartScreen(),
+                        ),
+                      );
+                    },
                   ),
-                ),
-              ],
-            ),
-            onPressed: () {
-              // Navigate to cart
+                  if (cartItemCount > 0)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          cartItemCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
             },
           ),
 

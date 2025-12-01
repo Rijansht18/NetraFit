@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:netrafit/models/frame_model.dart';
 import 'package:netrafit/services/frame_service.dart';
 import 'package:netrafit/widgets/common/frame_card.dart';
+import 'package:provider/provider.dart';
 
+import '../providers/auth_provider.dart';
+import '../providers/cart_provider.dart';
 import 'OrderNowScreen.dart';
 
 class FrameDetailsScreen extends StatefulWidget {
@@ -309,8 +312,43 @@ class _FrameDetailsScreenState extends State<FrameDetailsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed: () {
-                          // Add to cart
+                        onPressed: () async {
+                          final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                          final token = authProvider.token;
+
+                          if (token == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please login to add items to cart'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          final cartProvider = Provider.of<CartProvider>(context, listen: false);
+                          final success = await cartProvider.addToCart(
+                            token: token,
+                            frameId: frame.id,
+                            quantity: 1,
+                          );
+
+                          if (success) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Added ${frame.name} to cart'),
+                                backgroundColor: Colors.green,
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(cartProvider.errorMessage),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.white,
