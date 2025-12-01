@@ -1101,7 +1101,7 @@ class _FrameManagementScreenState extends State<FrameManagementScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Brand: ${frame.brand}'),
-                Text('Price: \$${frame.price.toStringAsFixed(2)}'),
+                Text('Price: \ रु ${frame.price.toStringAsFixed(2)}'),
                 Text('Stock: ${frame.quantity}'),
                 Text('Colors: ${frame.colors.join(', ')}'),
                 if (frame.mainCategoryName != null && frame.subCategoryName != null)
