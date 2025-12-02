@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:netrafit/screens/recommendation_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:netrafit/providers/auth_provider.dart';
 import 'package:netrafit/models/frame_model.dart';
@@ -385,7 +386,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: _buildActionButton(
                   icon: Icons.recommend,
                   label: 'Recommendations',
-                  onPressed: () {},
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => RecommendationScreen(),
+                      ),
+                    );
+                  },
                 ),
               ),
             ],
