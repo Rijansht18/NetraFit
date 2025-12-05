@@ -296,7 +296,7 @@ class _CartScreenState extends State<CartScreen> {
               backgroundColor: const Color(0xFF275BCD),
               padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
             ),
-            child: const Text('Continue Shopping'),
+            child: const Text('Continue Shopping', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
