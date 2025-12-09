@@ -3,9 +3,9 @@ import 'package:netrafit/models/frame_model.dart';
 import 'package:netrafit/services/frame_service.dart';
 import 'package:netrafit/widgets/common/frame_card.dart';
 import 'package:provider/provider.dart';
-
-import '../providers/auth_provider.dart';
-import '../providers/cart_provider.dart';
+import 'package:netrafit/providers/auth_provider.dart';
+import 'package:netrafit/providers/cart_provider.dart';
+import 'package:netrafit/providers/favorites_provider.dart';
 import 'OrderNowScreen.dart';
 
 class FrameDetailsScreen extends StatefulWidget {
@@ -27,6 +27,9 @@ class _FrameDetailsScreenState extends State<FrameDetailsScreen> {
   bool _isLoading = true;
   String _errorMessage = '';
   int _selectedImageIndex = 0;
+  bool _isFavorite = false;
+  bool _isFavoriteLoading = false;
+  String? _favoriteId;
 
   @override
   void initState() {
@@ -36,6 +39,7 @@ class _FrameDetailsScreenState extends State<FrameDetailsScreen> {
       _loadFrameDetails();
     } else {
       _isLoading = false;
+      _checkIfFavorite();
     }
   }
 
@@ -51,6 +55,7 @@ class _FrameDetailsScreenState extends State<FrameDetailsScreen> {
             _frame = Frame.fromJson(frameData);
             _isLoading = false;
           });
+          _checkIfFavorite();
         } else {
           setState(() {
             _errorMessage = 'Frame not found';
@@ -68,6 +73,114 @@ class _FrameDetailsScreenState extends State<FrameDetailsScreen> {
         _errorMessage = 'Error: ${e.toString()}';
         _isLoading = false;
       });
+    }
+  }
+
+  void _checkIfFavorite() {
+    if (_frame == null) return;
+
+    final favoritesProvider = Provider.of<FavoritesProvider>(context, listen: false);
+    final favorite = favoritesProvider.getFavoriteByFrameId(_frame!.id);
+
+    if (favorite != null && favorite.containsKey('_id')) {
+      setState(() {
+        _isFavorite = true;
+        _favoriteId = favorite['_id'] as String?;
+      });
+    } else {
+      setState(() {
+        _isFavorite = false;
+        _favoriteId = null;
+      });
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isFavoriteLoading || _frame == null) return;
+
+    setState(() {
+      _isFavoriteLoading = true;
+    });
+
+    final favoritesProvider = Provider.of<FavoritesProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final token = authProvider.token;
+
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please login to add to favorites'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      setState(() => _isFavoriteLoading = false);
+      return;
+    }
+
+    try {
+      if (_isFavorite) {
+        // Remove from favorites
+        String? favoriteIdToRemove = _favoriteId;
+
+        if (favoriteIdToRemove == null) {
+          final existingFavorite = favoritesProvider.getFavoriteByFrameId(_frame!.id);
+          if (existingFavorite != null && existingFavorite.containsKey('_id')) {
+            favoriteIdToRemove = existingFavorite['_id'] as String?;
+          }
+        }
+
+        if (favoriteIdToRemove != null) {
+          final success = await favoritesProvider.removeFavorite(
+            token: token,
+            favoriteId: favoriteIdToRemove,
+          );
+
+          if (success) {
+            setState(() {
+              _isFavorite = false;
+              _favoriteId = null;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Removed from favorites'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        }
+      } else {
+        // Add to favorites
+        final result = await favoritesProvider.addFavorite(
+          token: token,
+          frameId: _frame!.id,
+        );
+
+        if (result != null) {
+          setState(() {
+            _isFavorite = true;
+            _favoriteId = result['_id'] as String?;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Added to favorites'),
+              backgroundColor: Color(0xFF275BCD),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString().replaceAll('Exception: ', '')}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } finally {
+      setState(() => _isFavoriteLoading = false);
     }
   }
 
@@ -91,17 +204,25 @@ class _FrameDetailsScreenState extends State<FrameDetailsScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.share, color: Colors.black),
-            onPressed: () {
-              // Share functionality
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.favorite_border, color: Colors.black),
-            onPressed: () {
-              // Add to favorites
-            },
+          // Favorite button with loading state
+          _isFavoriteLoading
+              ? Container(
+            padding: const EdgeInsets.all(12),
+            child: const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.red),
+              ),
+            ),
+          )
+              : IconButton(
+            icon: Icon(
+              _isFavorite ? Icons.favorite : Icons.favorite_border,
+              color: _isFavorite ? Colors.red : Colors.black,
+            ),
+            onPressed: _toggleFavorite,
           ),
         ],
       ),

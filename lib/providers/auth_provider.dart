@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
@@ -24,53 +25,103 @@ class AuthProvider with ChangeNotifier {
     _loadStoredAuth();
   }
 
-  Future<void> _loadStoredAuth() async {
-    _rememberMe = await _storageService.getRememberMe();
-    if (_rememberMe) {
-      _token = await _storageService.getToken();
-      _user = await _storageService.getUser();
-      if (_token != null && _user != null) {
-        print('Auto-login loaded: ${_user?.username} (${_user?.role})');
-      }
-      notifyListeners();
+  // ---------------------- JWT TOKEN CHECK ----------------------
+  bool _isTokenExpired(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return true;
+
+      final payload = json.decode(
+        utf8.decode(
+          base64Url.decode(base64Url.normalize(parts[1])),
+        ),
+      );
+
+      final exp = payload["exp"];
+      if (exp == null) return true;
+
+      final expiryDate = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+      return DateTime.now().isAfter(expiryDate);
+
+    } catch (e) {
+      return true;
     }
   }
 
+  // ---------------------- LOAD STORED AUTH ----------------------
+  Future<void> _loadStoredAuth() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      _rememberMe = await _storageService.getRememberMe();
+
+      if (_rememberMe) {
+        _token = await _storageService.getToken();
+        _user = await _storageService.getUser();
+
+        if (_token != null && _user != null) {
+          // CHECK TOKEN EXPIRY
+          if (_isTokenExpired(_token!)) {
+            await logout();
+            return;
+          }
+
+          print("Auto-login loaded: ${_user?.username} (${_user?.role})");
+        } else {
+          await logout();
+        }
+      }
+
+    } catch (e) {
+      await logout();
+    }
+
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  // ---------------------- LOGIN ----------------------
   Future<bool> login(String identifier, String password, bool rememberMe) async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      // Step 1: Login to get token
       final loginResponse = await _authService.login(identifier, password);
 
-      if (loginResponse.success == true && loginResponse.data?['token'] != null) {
-        _token = loginResponse.data!['token'];
+      if (loginResponse.success == true && loginResponse.data?["token"] != null) {
+        _token = loginResponse.data!["token"];
         _rememberMe = rememberMe;
 
-        // Step 2: Get user profile with the token
+        // CHECK TOKEN EXPIRY BEFORE CONTINUING
+        if (_isTokenExpired(_token!)) {
+          await logout();
+          return false;
+        }
+
         final profileResponse = await _authService.getUserProfile(_token!);
 
         if (profileResponse.success == true) {
-          // Create user model from profile data
-          _user = UserModel.fromJson(profileResponse.data?['user'] ?? profileResponse.data ?? {});
+          _user = UserModel.fromJson(
+            profileResponse.data?["user"] ?? profileResponse.data ?? {},
+          );
 
-          // Store auth data if remember me is enabled
           if (rememberMe) {
             await _storageService.setToken(_token!);
             await _storageService.setUser(_user!);
             await _storageService.setRememberMe(true);
+          } else {
+            await _storageService.clearAuthData();
+            await _storageService.setToken(_token!);
+            await _storageService.setUser(_user!);
+            await _storageService.setRememberMe(false);
           }
 
-          print('Login successful: ${_user?.username} (${_user?.role})');
+          print("Login successful: ${_user?.username}");
           _isLoading = false;
           notifyListeners();
           return true;
-        } else {
-          print('Failed to get user profile: ${profileResponse.error}');
         }
-      } else {
-        print('Login failed: ${loginResponse.error}');
       }
 
       _isLoading = false;
@@ -78,29 +129,55 @@ class AuthProvider with ChangeNotifier {
       return false;
 
     } catch (e) {
-      print('Login error: $e');
+      print("Login error: $e");
       _isLoading = false;
       notifyListeners();
       return false;
     }
   }
 
+  // ---------------------- LOGOUT ----------------------
   Future<void> logout() async {
     _user = null;
     _token = null;
     _rememberMe = false;
 
-    // Clear stored data
     await _storageService.clearAuthData();
+    print("User logged out");
 
-    print('User logged out');
     notifyListeners();
   }
 
+  // ---------------------- HELPER FUNCTIONS ----------------------
   void setRememberMe(bool value) {
     _rememberMe = value;
     _storageService.setRememberMe(value);
-    print('Remember me set to: $value');
+    notifyListeners();
+  }
+
+  Future<void> updateUser(UserModel user) async {
+    _user = user;
+    if (_rememberMe) {
+      await _storageService.setUser(user);
+    }
+    notifyListeners();
+  }
+
+  Future<void> refreshToken(String newToken) async {
+    _token = newToken;
+    if (_rememberMe) {
+      await _storageService.setToken(newToken);
+    }
+    notifyListeners();
+  }
+
+  bool get hasValidToken =>
+      _token != null && _token!.isNotEmpty && !_isTokenExpired(_token!);
+
+  void setAuthState(String token, UserModel user, bool rememberMe) {
+    _token = token;
+    _user = user;
+    _rememberMe = rememberMe;
     notifyListeners();
   }
 }
