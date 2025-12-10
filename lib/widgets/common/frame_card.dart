@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:netrafit/models/frame_model.dart';
-import 'package:netrafit/providers/favorites_provider.dart'; // We'll create this
-import 'package:netrafit/services/favorites_service.dart'; // We'll create this
+import 'package:netrafit/providers/favorites_provider.dart';
+import 'package:netrafit/services/favorites_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../screens/FrameDetailsScreen.dart';
+import '../../screens/main_try_on_screen.dart'; // Add this import
 
 class FrameCard extends StatefulWidget {
   final Frame frame;
@@ -35,7 +36,6 @@ class _FrameCardState extends State<FrameCard> {
     _checkIfFavorite();
   }
 
-  // Update _toggleFavorite method - Simplified version
   Future<void> _toggleFavorite() async {
     if (_isLoading) return;
 
@@ -161,7 +161,6 @@ class _FrameCardState extends State<FrameCard> {
     }
   }
 
-// Update _checkIfFavorite method
   void _checkIfFavorite() {
     final favoritesProvider = Provider.of<FavoritesProvider>(context, listen: false);
 
@@ -337,7 +336,7 @@ class _FrameCardState extends State<FrameCard> {
                                 // Action Buttons
                                 Row(
                                   children: [
-                                    // Try On Button
+                                    // Try On Button - UPDATED
                                     Container(
                                       height: 28,
                                       decoration: BoxDecoration(
@@ -352,7 +351,19 @@ class _FrameCardState extends State<FrameCard> {
                                         color: Colors.transparent,
                                         child: InkWell(
                                           onTap: () {
-                                            // Try on action - prevent propagation
+                                            print('Try On clicked for frame: ${widget.frame.name}');
+                                            print('Frame ID: ${widget.frame.id}');
+                                            print('Frame filename: ${widget.frame.filename}');
+
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) => MainTryOnScreen(
+                                                  recommendedFrameId: widget.frame.id,
+                                                  recommendedFrameFilenames: [widget.frame.filename],
+                                                ),
+                                              ),
+                                            );
                                           },
                                           borderRadius: BorderRadius.circular(6),
                                           child: const Padding(
@@ -372,38 +383,6 @@ class _FrameCardState extends State<FrameCard> {
                                         ),
                                       ),
                                     ),
-
-                                    // Add Cart Button (conditionally shown)
-                                    // if (widget.showCartButton) ...[
-                                    //   const SizedBox(width: 6),
-                                    //   Container(
-                                    //     height: 28,
-                                    //     decoration: BoxDecoration(
-                                    //       color: const Color(0xFF275BCD),
-                                    //       borderRadius: BorderRadius.circular(6),
-                                    //     ),
-                                    //     child: Material(
-                                    //       color: Colors.transparent,
-                                    //       child: InkWell(
-                                    //         onTap: () {
-                                    //           // Add to cart action
-                                    //         },
-                                    //         borderRadius: BorderRadius.circular(6),
-                                    //         child: const Padding(
-                                    //           padding: EdgeInsets.symmetric(
-                                    //             horizontal: 10,
-                                    //             vertical: 4,
-                                    //           ),
-                                    //           child: Icon(
-                                    //             Icons.add_shopping_cart,
-                                    //             size: 14,
-                                    //             color: Colors.white,
-                                    //           ),
-                                    //         ),
-                                    //       ),
-                                    //     ),
-                                    //   ),
-                                    // ],
                                   ],
                                 ),
                               ],

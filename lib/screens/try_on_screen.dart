@@ -5,14 +5,24 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../core/config/api_config.dart';
+import '../models/frame_model.dart';
 import '../providers/frame_provider.dart';
-import '../widgets/frame_card.dart';
+import '../services/category_service.dart';
+import '../screens/FrameDetailsScreen.dart';
+import '../providers/auth_provider.dart';
+import '../providers/cart_provider.dart';
 
 class TryOnScreen extends StatefulWidget {
   final List<String>? recommendedFrameFilenames;
+  final String? recommendedFrameId;
   final bool showHeader;
 
-  const TryOnScreen({super.key, this.recommendedFrameFilenames, this.showHeader = false});
+  const TryOnScreen({
+    super.key,
+    this.recommendedFrameFilenames,
+    this.recommendedFrameId,
+    this.showHeader = false
+  });
 
   @override
   State<TryOnScreen> createState() => _TryOnScreenState();
@@ -29,12 +39,21 @@ class _TryOnScreenState extends State<TryOnScreen> {
   bool _processingStarted = false;
   bool _cameraPermissionGranted = false;
 
+  List<Map<String, dynamic>> _categories = [];
+  String _selectedCategory = 'all';
+  String _selectedCategoryName = 'All';
+  Map<String, dynamic>? _selectedFrameData;
+  final CategoryService _categoryService = CategoryService();
+
   @override
   void initState() {
     super.initState();
+    print('TryOnScreen init - Recommended frames: ${widget.recommendedFrameFilenames}');
+    print('TryOnScreen init - Recommended frame ID: ${widget.recommendedFrameId}');
+
     _requestCameraPermission().then((_) {
       _initializeWebView();
-      _loadFrames();
+      _loadFramesAndCategories();
     });
   }
 
@@ -52,7 +71,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
         _cameraPermissionGranted = false;
       });
 
-      // Show permission dialog
       if (mounted) {
         showDialog(
           context: context,
@@ -78,19 +96,57 @@ class _TryOnScreenState extends State<TryOnScreen> {
     }
   }
 
-  void _loadFrames() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+  void _loadFramesAndCategories() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final frameProvider = Provider.of<FrameProvider>(context, listen: false);
-      if (frameProvider.frames.isEmpty) {
-        frameProvider.loadFrames().then((_) {
-          if (mounted) {
-            setState(() {
-              _framesLoaded = true;
+
+      // Load categories
+      final categoriesResponse = await _categoryService.getAllMainCategories();
+      if (categoriesResponse.success) {
+        final categoriesData = categoriesResponse.data['data'] ?? [];
+        final List<Map<String, dynamic>> categories = [];
+
+        categories.add({'name': 'All', '_id': 'all'});
+
+        for (var cat in categoriesData) {
+          if (cat is Map<String, dynamic>) {
+            final categoryName = cat['name']?.toString() ?? 'Category';
+            final categoryId = cat['_id']?.toString() ?? '';
+            categories.add({
+              'name': categoryName,
+              '_id': categoryId,
             });
-            _autoSelectFrame(frameProvider);
+            print('Loaded category: $categoryName - ID: $categoryId');
           }
+        }
+
+        setState(() {
+          _categories = categories;
         });
+      }
+
+      // Load frames
+      if (frameProvider.frames.isEmpty) {
+        await frameProvider.loadFrames();
+
+        print('=== DEBUG: All loaded frames ===');
+        for (var frame in frameProvider.frames) {
+          print('Frame: ${frame.name}, ID: ${frame.id}, Filename: ${frame.filename}');
+          if (frame.mainCategory is Map) {
+            final mainCat = frame.mainCategory as Map<String, dynamic>;
+            print('  Category Name: ${mainCat['name']}');
+          }
+        }
+        print('=============================');
+
+        if (mounted) {
+          setState(() {
+            _framesLoaded = true;
+          });
+          _autoSelectFrame(frameProvider);
+        }
       } else {
+        print('Frames already loaded: ${frameProvider.frames.length}');
         setState(() {
           _framesLoaded = true;
         });
@@ -100,24 +156,91 @@ class _TryOnScreenState extends State<TryOnScreen> {
   }
 
   void _autoSelectFrame(FrameProvider frameProvider) {
-    if (frameProvider.frames.isNotEmpty && _selectedFrame.isEmpty) {
-      String frameToSelect;
+    print('=== DEBUG: _autoSelectFrame called ===');
+    print('Frames available: ${frameProvider.frames.length}');
+    print('Recommended frames: ${widget.recommendedFrameFilenames}');
+    print('Recommended frame ID: ${widget.recommendedFrameId}');
+    print('Current selected frame: $_selectedFrame');
 
-      if (widget.recommendedFrameFilenames != null &&
+    if (frameProvider.frames.isNotEmpty && _selectedFrame.isEmpty) {
+      String frameToSelect = '';
+      Frame? selectedFrameObject;
+
+      // First try to find by ID (more reliable)
+      if (widget.recommendedFrameId != null && widget.recommendedFrameId!.isNotEmpty) {
+        print('Looking for frame by ID: ${widget.recommendedFrameId}');
+        try {
+          selectedFrameObject = frameProvider.frames.firstWhere(
+                (frame) => frame.id == widget.recommendedFrameId,
+          );
+          frameToSelect = selectedFrameObject.filename;
+          print('Found frame by ID: ${selectedFrameObject.name}, Filename: $frameToSelect');
+        } catch (e) {
+          print('Frame not found by ID: ${widget.recommendedFrameId}');
+        }
+      }
+
+      // If not found by ID, try by filename
+      if (frameToSelect.isEmpty &&
+          widget.recommendedFrameFilenames != null &&
           widget.recommendedFrameFilenames!.isNotEmpty) {
         frameToSelect = widget.recommendedFrameFilenames!.first;
-      } else {
-        frameToSelect = frameProvider.frames.first.filename;
+        print('Looking for frame by filename: $frameToSelect');
+
+        final matchingFrames = frameProvider.frames.where(
+                (frame) => frame.filename == frameToSelect
+        ).toList();
+
+        print('Found ${matchingFrames.length} matching frames');
+        if (matchingFrames.isNotEmpty) {
+          selectedFrameObject = matchingFrames.first;
+          print('Found frame by filename: ${selectedFrameObject.name}');
+        } else {
+          print('WARNING: Frame not found by filename!');
+          print('Available filenames (first 5):');
+          for (var frame in frameProvider.frames.take(5)) {
+            print('  - ${frame.filename}');
+          }
+        }
+      }
+
+      // If still not found, use first available frame
+      if (frameToSelect.isEmpty) {
+        selectedFrameObject = frameProvider.frames.first;
+        frameToSelect = selectedFrameObject.filename;
+        print('Using first available frame: ${selectedFrameObject.name}, Filename: $frameToSelect');
       }
 
       setState(() {
         _selectedFrame = frameToSelect;
+        if (selectedFrameObject != null) {
+          _selectedFrameData = {
+            'id': selectedFrameObject.id,
+            'name': selectedFrameObject.name,
+            'brand': selectedFrameObject.brand,
+            'price': selectedFrameObject.price,
+            'imageUrls': selectedFrameObject.imageUrls,
+            'description': selectedFrameObject.description,
+            'type': selectedFrameObject.type,
+            'shape': selectedFrameObject.shape,
+            'size': selectedFrameObject.size,
+            'colors': selectedFrameObject.colors,
+            'quantity': selectedFrameObject.quantity,
+            'mainCategory': selectedFrameObject.mainCategory,
+          };
+          print('Successfully selected frame: ${selectedFrameObject.name}');
+        }
       });
 
-      // Wait for webview to load before sending frame change
+      print('WebView page loaded: $_isPageLoaded');
       if (_isPageLoaded) {
+        print('WebView ready, changing frame...');
         _changeFrameOnWebView(frameToSelect);
+      } else {
+        print('WebView not ready yet, frame will be selected when page loads');
       }
+    } else {
+      print('Skipping auto-select: frames empty or already selected');
     }
   }
 
@@ -134,7 +257,7 @@ class _TryOnScreenState extends State<TryOnScreen> {
 
     _webViewController = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000))
+      ..setBackgroundColor(const Color(0xFF000000))
       ..enableZoom(false)
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -149,19 +272,30 @@ class _TryOnScreenState extends State<TryOnScreen> {
             });
           },
           onPageFinished: (String url) {
+            print('WebView page finished loading: $url');
             setState(() {
               _isLoading = false;
               _isPageLoaded = true;
             });
-            print('WebView page loaded: $url');
 
-            // Grant camera permissions via JavaScript
+            print('Granting camera permissions...');
             _grantCameraPermissions();
 
-            // Auto-select frame after page loads
-            if (_selectedFrame.isNotEmpty) {
-              _changeFrameOnWebView(_selectedFrame);
-            }
+            Future.delayed(const Duration(milliseconds: 800), () {
+              if (_selectedFrame.isNotEmpty) {
+                print('Page loaded, changing to selected frame: $_selectedFrame');
+                _changeFrameOnWebView(_selectedFrame);
+              } else {
+                print('No frame selected yet, checking if we have frames...');
+                if (_framesLoaded) {
+                  final frameProvider = Provider.of<FrameProvider>(context, listen: false);
+                  if (frameProvider.frames.isNotEmpty && _selectedFrame.isEmpty) {
+                    print('Auto-selecting first available frame');
+                    _autoSelectFrame(frameProvider);
+                  }
+                }
+              }
+            });
           },
           onWebResourceError: (WebResourceError error) {
             setState(() {
@@ -169,21 +303,17 @@ class _TryOnScreenState extends State<TryOnScreen> {
               _hasError = true;
             });
             print('WebView error: ${error.errorCode} - ${error.description}');
-            print('Error URL: ${error.url}');
-            print('Error type: ${error.errorType}');
           },
           onUrlChange: (UrlChange change) {
             print('URL changed to: ${change.url}');
           },
           onNavigationRequest: (NavigationRequest request) {
             print('Navigation request to: ${request.url}');
-            // Allow all navigation for ngrok
             return NavigationDecision.navigate;
           },
         ),
       );
 
-    // Platform-specific configurations
     if (_webViewController.platform is AndroidWebViewController) {
       AndroidWebViewController.enableDebugging(true);
       final AndroidWebViewController androidController =
@@ -191,20 +321,17 @@ class _TryOnScreenState extends State<TryOnScreen> {
       androidController.setMediaPlaybackRequiresUserGesture(false);
       androidController.setMixedContentMode(MixedContentMode.compatibilityMode);
 
-      // Enable camera for Android WebView
       androidController.setOnPlatformPermissionRequest((request) {
         print('Platform permission request: ${request.types}');
         request.grant();
       });
     }
 
-    // Load the URL with retry mechanism
     _loadUrlWithRetry();
   }
 
   void _loadUrlWithRetry({int retryCount = 0}) {
     const maxRetries = 2;
-
     final url = '${ApiUrl.baseUrl}/client_camera';
     print('Loading URL: $url (attempt ${retryCount + 1})');
 
@@ -222,8 +349,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
           _hasError = true;
           _isLoading = false;
         });
-
-        // Try alternative URLs as fallback
         _tryAlternativeUrls();
       }
     });
@@ -234,7 +359,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
       '${ApiUrl.baseUrl}/client_camera',
       '${ApiUrl.baseUrl}/client_camera',
     ];
-
     print('Trying alternative URLs...');
     for (final url in urls) {
       _webViewController.loadRequest(Uri.parse(url));
@@ -248,11 +372,9 @@ class _TryOnScreenState extends State<TryOnScreen> {
       return;
     }
 
-    // Grant camera permissions via JavaScript
     final jsCode = '''
       console.log('Attempting to grant camera permissions...');
       
-      // Function to request camera access
       function requestCameraAccess() {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           navigator.mediaDevices.getUserMedia({ 
@@ -264,7 +386,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
           })
           .then(function(stream) {
             console.log('Camera access granted successfully');
-            // Create video element and play stream
             const video = document.createElement('video');
             video.srcObject = stream;
             video.autoplay = true;
@@ -273,7 +394,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
           })
           .catch(function(error) {
             console.log('Camera access error:', error.name, error.message);
-            // Retry after delay
             setTimeout(requestCameraAccess, 1000);
           });
         } else {
@@ -281,7 +401,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
         }
       }
       
-      // Override permission requests
       if (navigator.permissions && navigator.permissions.query) {
         navigator.permissions.query({name: 'camera'}).then(function(result) {
           console.log('Camera permission state:', result.state);
@@ -301,16 +420,13 @@ class _TryOnScreenState extends State<TryOnScreen> {
           requestCameraAccess();
         });
       } else {
-        // Direct approach if permissions API not available
         requestCameraAccess();
       }
       
-      // Listen for camera-related events
       document.addEventListener('click', function() {
         requestCameraAccess();
       });
       
-      // Try initial request
       setTimeout(requestCameraAccess, 500);
     ''';
 
@@ -327,25 +443,63 @@ class _TryOnScreenState extends State<TryOnScreen> {
     return 'large';
   }
 
-  void _changeFrame(String frameFilename) {
+  void _changeFrame(String frameFilename, FrameProvider frameProvider) {
+    print('Manual frame change requested: $frameFilename');
     setState(() {
       _selectedFrame = frameFilename;
+      final selectedFrame = frameProvider.frames.firstWhere(
+            (frame) => frame.filename == frameFilename,
+      );
+      _selectedFrameData = {
+        'id': selectedFrame.id,
+        'name': selectedFrame.name,
+        'brand': selectedFrame.brand,
+        'price': selectedFrame.price,
+        'imageUrls': selectedFrame.imageUrls,
+        'description': selectedFrame.description,
+        'type': selectedFrame.type,
+        'shape': selectedFrame.shape,
+        'size': selectedFrame.size,
+        'colors': selectedFrame.colors,
+        'quantity': selectedFrame.quantity,
+        'mainCategory': selectedFrame.mainCategory,
+      };
     });
     _changeFrameOnWebView(frameFilename);
   }
 
   void _changeFrameOnWebView(String frameFilename) {
+    print('=== DEBUG: _changeFrameOnWebView called ===');
+    print('Frame to change: $frameFilename');
+    print('WebView page loaded: $_isPageLoaded');
+
     if (!_isPageLoaded) {
-      print('WebView not ready, queuing frame change: $frameFilename');
+      print('WebView not ready, scheduling retry in 500ms...');
       Future.delayed(const Duration(milliseconds: 500), () {
         _changeFrameOnWebView(frameFilename);
       });
       return;
     }
 
-    final javascript = "changeFrame('$frameFilename', '${_getSizeKey()}');";
+    String cleanFilename = frameFilename;
+    // Remove path if present
+    if (frameFilename.contains('/')) {
+      cleanFilename = frameFilename.split('/').last;
+    }
+    // Remove extension if present
+    if (cleanFilename.contains('.')) {
+      cleanFilename = cleanFilename.split('.').first;
+    }
+
+    print('Original filename: $frameFilename');
+    print('Cleaned filename: $cleanFilename');
+    print('Size key: ${_getSizeKey()}');
+
+    final javascript = "changeFrame('$cleanFilename', '${_getSizeKey()}');";
+    print('Executing JavaScript: $javascript');
+
     _webViewController.runJavaScript(javascript).then((_) {
-      print('Frame changed to: $frameFilename');
+      print('Frame changed successfully to: $cleanFilename');
       if (!_processingStarted) {
         setState(() {
           _processingStarted = true;
@@ -353,9 +507,43 @@ class _TryOnScreenState extends State<TryOnScreen> {
       }
     }).catchError((error) {
       print('Error changing frame: $error');
-      // Retry after delay
-      Future.delayed(const Duration(milliseconds: 1000), () {
-        _changeFrameOnWebView(frameFilename);
+      print('Retrying with different filename variations...');
+
+      // Try different filename variations
+      final variations = [
+        cleanFilename,
+        frameFilename,
+        frameFilename.split('/').last,
+        frameFilename.replaceAll('.png', ''),
+        frameFilename.replaceAll('.jpg', ''),
+        frameFilename.replaceAll('.jpeg', ''),
+      ];
+
+      // Try each variation
+      _tryFilenameVariations(variations, 0);
+    });
+  }
+
+  void _tryFilenameVariations(List<String> variations, int index) {
+    if (index >= variations.length) {
+      print('All filename variations failed');
+      return;
+    }
+
+    final variation = variations[index];
+    print('Trying filename variation $index: $variation');
+
+    final javascript = "changeFrame('$variation', '${_getSizeKey()}');";
+
+    _webViewController.runJavaScript(javascript).then((_) {
+      print('Success with variation: $variation');
+      setState(() {
+        _selectedFrame = variation;
+      });
+    }).catchError((error) {
+      print('Failed with variation: $variation, error: $error');
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _tryFilenameVariations(variations, index + 1);
       });
     });
   }
@@ -368,6 +556,7 @@ class _TryOnScreenState extends State<TryOnScreen> {
     if (!_isPageLoaded || _selectedFrame.isEmpty) return;
 
     final javascript = "changeSize('${_getSizeKey()}');";
+    print('Changing size: $javascript');
     _webViewController.runJavaScript(javascript).then((_) {
       print('Size changed to: ${_getSizeKey()}');
     }).catchError((error) {
@@ -381,7 +570,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
       _hasError = false;
     });
 
-    // Reload and re-grant permissions
     _webViewController.reload().then((_) {
       Future.delayed(const Duration(seconds: 2), () {
         if (_isPageLoaded) {
@@ -412,32 +600,12 @@ class _TryOnScreenState extends State<TryOnScreen> {
             const SizedBox(height: 16),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
+                backgroundColor: const Color(0xFF275BCD),
                 foregroundColor: Colors.white,
               ),
               onPressed: _refreshCameraView,
               child: const Text('Retry Connection'),
             ),
-            const SizedBox(height: 8),
-            if (!_cameraPermissionGranted)
-              Column(
-                children: [
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Camera permission required',
-                    style: TextStyle(color: Colors.orange),
-                  ),
-                  const SizedBox(height: 8),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.white,
-                    ),
-                    onPressed: _requestCameraPermission,
-                    child: const Text('Grant Camera Permission'),
-                  ),
-                ],
-              ),
           ],
         ),
       );
@@ -447,7 +615,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
       children: [
         WebViewWidget(controller: _webViewController),
 
-        // Loading indicator
         if (_isLoading)
           Container(
             color: Colors.black,
@@ -461,361 +628,511 @@ class _TryOnScreenState extends State<TryOnScreen> {
                     'Loading Camera...',
                     style: TextStyle(color: Colors.white, fontSize: 16),
                   ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Please wait',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
                 ],
               ),
             ),
           ),
-
-        // Refresh button when loaded
-        if (_isPageLoaded && !_isLoading)
-          Positioned(
-            top: 10,
-            right: 10,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.refresh, color: Colors.white),
-                onPressed: _refreshCameraView,
-                tooltip: 'Refresh Camera',
-              ),
-            ),
-          ),
-
-        // Camera status indicator
-        // if (_isPageLoaded && !_isLoading && !_processingStarted)
-        //   Positioned(
-        //     top: 10,
-        //     left: 10,
-        //     child: Container(
-        //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        //       decoration: BoxDecoration(
-        //         color: Colors.orange.withOpacity(0.8),
-        //         borderRadius: BorderRadius.circular(20),
-        //       ),
-        //       child: Row(
-        //         children: [
-        //           Icon(
-        //             _cameraPermissionGranted ? Icons.camera_alt : Icons.camera,
-        //             color: Colors.white,
-        //             size: 16,
-        //           ),
-        //           const SizedBox(width: 6),
-        //           Text(
-        //             _cameraPermissionGranted ? 'Select a frame to start' : 'Camera access needed',
-        //             style: const TextStyle(color: Colors.white, fontSize: 12),
-        //           ),
-        //         ],
-        //       ),
-        //     ),
-        //   ),
-
-        // Processing indicator
-        // if (_processingStarted && _cameraPermissionGranted)
-        //   Positioned(
-        //     top: 10,
-        //     left: 10,
-        //     child: Container(
-        //       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        //       decoration: BoxDecoration(
-        //         color: Colors.green.withOpacity(0.8),
-        //         borderRadius: BorderRadius.circular(20),
-        //       ),
-        //       child: const Row(
-        //         children: [
-        //           Icon(Icons.check_circle, color: Colors.white, size: 16),
-        //           SizedBox(width: 6),
-        //           Text(
-        //             'Live Processing',
-        //             style: TextStyle(color: Colors.white, fontSize: 12),
-        //           ),
-        //         ],
-        //       ),
-        //     ),
-        //   ),
       ],
     );
   }
 
-  Widget _buildSizeSlider() {
-    return Container(
-      width: 70,
-      height: 200,
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.7),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text(
-            'SIZE',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 10),
-          // Vertical Slider
-          Expanded(
-            child: RotatedBox(
-              quarterTurns: 3, // Make it vertical
-              child: Slider(
-                value: _sizeValue,
-                min: 0.8,
-                max: 1.2,
-                divisions: 4,
-                onChanged: _changeSize,
-                onChangeEnd: _changeSize,
-                activeColor: Colors.blue,
-                inactiveColor: Colors.grey.shade600,
-                label: _getSizeKey().toUpperCase(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            _getSizeKey().toUpperCase(),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFrameSelectionSection(FrameProvider frameProvider) {
-    final framesToShow = widget.recommendedFrameFilenames != null &&
-        widget.recommendedFrameFilenames!.isNotEmpty
-        ? frameProvider.frames
-        .where((frame) =>
-        widget.recommendedFrameFilenames!.contains(frame.filename))
-        .toList()
-        : frameProvider.frames;
-
-    if (framesToShow.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.visibility_off, size: 48, color: Colors.grey),
-            const SizedBox(height: 8),
-            const Text(
-              'No frames available',
-              style: TextStyle(color: Colors.grey, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: () {
-                frameProvider.loadFrames();
-              },
-              child: const Text('Reload Frames'),
-            ),
-          ],
-        ),
-      );
+  List<dynamic> _getFilteredFrames(FrameProvider frameProvider) {
+    if (_selectedCategory == 'all') {
+      return frameProvider.frames;
     }
 
-    return Column(
-      children: [
-        // Header with frame count
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Select Frame (${framesToShow.length})',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (widget.recommendedFrameFilenames != null &&
-                  widget.recommendedFrameFilenames!.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.green),
-                  ),
-                  child: const Text(
-                    'Recommended',
-                    style: TextStyle(
-                      color: Colors.green,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
+    return frameProvider.frames.where((frame) {
+      if (frame.mainCategory is Map<String, dynamic>) {
+        final mainCat = frame.mainCategory as Map<String, dynamic>;
+        final categoryName = mainCat['name']?.toString() ?? '';
+        return categoryName == _selectedCategoryName;
+      }
+      final frameCategory = frame.mainCategory?.toString() ?? '';
+      return frameCategory == _selectedCategory;
+    }).toList();
+  }
 
-        // Frame list
-        Expanded(
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: framesToShow.length,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            itemBuilder: (context, index) {
-              final frame = framesToShow[index];
-              return Container(
-                width: 130,
-                margin: const EdgeInsets.symmetric(horizontal: 6),
-                child: FrameCard(
-                  frame: frame,
-                  isSelected: _selectedFrame == frame.filename,
-                  onTap: () => _changeFrame(frame.filename),
-                  showShape: true,
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
+  void _selectCategory(String categoryId, String categoryName) {
+    setState(() {
+      _selectedCategory = categoryId;
+      _selectedCategoryName = categoryName;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final frameProvider = Provider.of<FrameProvider>(context);
+    final frames = _getFilteredFrames(frameProvider);
+
+    // Force frame change if needed
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_isPageLoaded && _selectedFrame.isNotEmpty && !_processingStarted) {
+        Future.delayed(const Duration(milliseconds: 1000), () {
+          print('Build method forcing frame change...');
+          _changeFrameOnWebView(_selectedFrame);
+        });
+      }
+    });
 
     return Scaffold(
-      appBar: widget.showHeader
-          ? AppBar(
-        title: const Text('Virtual Try-On'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.info_outline),
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('How to Use'),
-                  content: const Text(
-                    '• Select a frame from the list below\n'
-                        '• Adjust size using the slider on the right\n'
-                        '• Position your face 40-70cm from camera\n'
-                        '• Ensure good lighting for best results\n'
-                        '• Grant camera permission when prompted',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('OK'),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-          if (!_cameraPermissionGranted)
-            IconButton(
-              icon: const Icon(Icons.camera_alt),
-              onPressed: _requestCameraPermission,
-              tooltip: 'Grant Camera Permission',
-            ),
-        ],
-      )
-          : null,
+      backgroundColor: Colors.white,
       body: Column(
         children: [
           // Camera View Section
           Expanded(
             flex: 3,
             child: Container(
-              color: Colors.black,
-              child: Stack(
-                children: [
-                  _buildWebViewContent(),
-
-                  // Size Slider on right side
-                  Positioned(
-                    right: 8,
-                    top: MediaQuery.of(context).size.height * 0.25,
-                    child: _buildSizeSlider(),
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
-            ),
-          ),
-
-          // Frame Selection Section
-          Expanded(
-            flex: 2,
-            child: Container(
-              color: Colors.grey[50],
-              child: !_framesLoaded || frameProvider.isLoading
-                  ? const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Stack(
                   children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text('Loading frames...'),
+                    _buildWebViewContent(),
+
+                    // Size slider on right
+                    Positioned(
+                      right: 8,
+                      top: MediaQuery.of(context).size.height * 0.25,
+                      child: _buildModernSizeSlider(),
+                    ),
+
+                    // Camera controls at bottom
+                    Positioned(
+                      bottom: 16,
+                      left: 0,
+                      right: 0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildCameraControlButton(
+                            icon: Icons.refresh,
+                            label: 'Refresh',
+                            onPressed: _refreshCameraView,
+                            isActive: true,
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-              )
-                  : _buildFrameSelectionSection(frameProvider),
+              ),
             ),
           ),
+
+          const SizedBox(height: 16),
+
+          // Category Filter
+          SizedBox(
+            height: 50,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _categories.length,
+              itemBuilder: (context, index) {
+                final category = _categories[index];
+                final isSelected = _selectedCategory == category['_id'];
+
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(category['name']),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      _selectCategory(category['_id'], category['name']);
+                    },
+                    selectedColor: const Color(0xFF275BCD),
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.white : Colors.black,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // Frame Selection Header with size info
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Frames (${frames.length})',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+                Text(
+                  'Size: ${_getSizeKey().toUpperCase()}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Frame Selection List
+          SizedBox(
+            height: 160,
+            child: _buildFrameSelectionSection(frameProvider, frames),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Action Buttons
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      if (_selectedFrameData != null) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => FrameDetailsScreen(
+                              frameId: _selectedFrameData!['id'],
+                              frame: Frame.fromJson({
+                                '_id': _selectedFrameData!['id'],
+                                'name': _selectedFrameData!['name'],
+                                'brand': _selectedFrameData!['brand'],
+                                'price': _selectedFrameData!['price'],
+                                'imageUrls': _selectedFrameData!['imageUrls'],
+                                'description': _selectedFrameData!['description'],
+                                'type': _selectedFrameData!['type'],
+                                'shape': _selectedFrameData!['shape'],
+                                'size': _selectedFrameData!['size'],
+                                'colors': _selectedFrameData!['colors'],
+                                'quantity': _selectedFrameData!['quantity'],
+                                'isActive': true,
+                                'mainCategory': _selectedFrameData!['mainCategory'],
+                                'filename': _selectedFrame,
+                              }),
+                            ),
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Please select a frame first'),
+                            backgroundColor: Colors.red,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF275BCD),
+                      side: const BorderSide(color: Color(0xFF275BCD)),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: const Icon(Icons.remove_red_eye),
+                    label: const Text(
+                      'View Details',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      if (_selectedFrameData != null) {
+                        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                        final cartProvider = Provider.of<CartProvider>(context, listen: false);
+                        final token = authProvider.token;
+
+                        if (token == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please login to add items to cart'),
+                              backgroundColor: Colors.red,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                          return;
+                        }
+
+                        final success = await cartProvider.addToCart(
+                          token: token,
+                          frameId: _selectedFrameData!['id'],
+                          quantity: 1,
+                        );
+
+                        if (success) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Added ${_selectedFrameData!['name']} to cart'),
+                              backgroundColor: Colors.green,
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(cartProvider.errorMessage ?? 'Failed to add to cart'),
+                              backgroundColor: Colors.red,
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Please select a frame first'),
+                            backgroundColor: Colors.red,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF275BCD),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    icon: const Icon(Icons.add_shopping_cart),
+                    label: const Text(
+                      'Add to Cart',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
         ],
       ),
+    );
+  }
 
-      // Bottom navigation for quick actions
-      persistentFooterButtons: _isPageLoaded && !_hasError
-          ? [
-        Row(
+  Widget _buildModernSizeSlider() {
+    return Container(
+        width: 60,
+        height: 160,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.7),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.camera_alt),
-                label: const Text('Refresh Camera'),
-                onPressed: _refreshCameraView,
+            const Text(
+              'SIZE',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(height: 10),
             Expanded(
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.settings),
-                label: const Text('Reset Size'),
-                onPressed: () => _changeSize(1.0),
+              child: RotatedBox(
+                quarterTurns: 3,
+                child: Slider(
+                  value: _sizeValue,
+                  min: 0.8,
+                  max: 1.2,
+                  divisions: 4,
+                  onChanged: _changeSize,
+                  onChangeEnd: _changeSize,
+                  activeColor: const Color(0xFF275BCD),
+                  inactiveColor: Colors.grey.shade600,
+                ),
               ),
             ),
-            if (!_cameraPermissionGranted) ...[
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.camera_alt),
-                  label: const Text('Enable Camera'),
-                  onPressed: _requestCameraPermission,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
+            const SizedBox(height: 10),
+            Text(
+              _getSizeKey().toUpperCase(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        )
+    );
+  }
+
+  Widget _buildCameraControlButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    required bool isActive,
+  }) {
+    return Column(
+      children: [
+        Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF275BCD) : Colors.grey,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 6,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: IconButton(
+            onPressed: onPressed,
+            icon: Icon(icon, color: Colors.white),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Colors.white,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFrameSelectionSection(FrameProvider frameProvider, List<dynamic> frames) {
+    if (frames.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.visibility_off, size: 48, color: Colors.grey),
+            const SizedBox(height: 8),
+            Text(
+              _selectedCategory == 'all'
+                  ? 'No frames available'
+                  : 'No frames in $_selectedCategoryName category',
+              style: const TextStyle(color: Colors.grey, fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: frames.length,
+      itemBuilder: (context, index) {
+        final frame = frames[index];
+        return _buildFrameCard(frame, frameProvider);
+      },
+    );
+  }
+
+  Widget _buildFrameCard(dynamic frame, FrameProvider frameProvider) {
+    return Container(
+      width: 140,
+      margin: const EdgeInsets.only(right: 12),
+      child: GestureDetector(
+        onTap: () => _changeFrame(frame.filename, frameProvider),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: _selectedFrame == frame.filename
+                  ? const Color(0xFF275BCD)
+                  : Colors.grey[200]!,
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Frame Image
+              Container(
+                height: 100,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(10),
+                    topRight: Radius.circular(10),
                   ),
+                ),
+                child: Center(
+                  child: frame.imageUrls.isNotEmpty
+                      ? Image.network(
+                    frame.imageUrls.first,
+                    fit: BoxFit.contain,
+                    width: 80,
+                    height: 60,
+                  )
+                      : const Icon(Icons.image, color: Colors.grey, size: 40),
+                ),
+              ),
+
+              // Frame Info
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      frame.name,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'रु ${frame.price.toInt()}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF275BCD),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
-          ],
+          ),
         ),
-      ]
-          : null,
+      ),
     );
   }
 
@@ -823,13 +1140,12 @@ class _TryOnScreenState extends State<TryOnScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_framesLoaded) {
-      _loadFrames();
+      _loadFramesAndCategories();
     }
   }
 
   @override
   void dispose() {
-    // Clean up webview resources
     _webViewController.clearCache();
     super.dispose();
   }

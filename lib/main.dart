@@ -70,11 +70,6 @@ class _MyAppState extends State<MyApp> {
         )
             : Consumer<AuthProvider>(
           builder: (context, authProvider, child) {
-            // If token expired -> logout -> onboarding
-            if (!authProvider.hasValidToken) {
-              authProvider.logout();
-              return const OnboardingScreen();
-            }
 
             // Auto-login if remember me is enabled and user is logged in
             if (authProvider.isLoggedIn) {
