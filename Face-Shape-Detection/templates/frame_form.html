@@ -104,7 +104,7 @@
 
         .form-select:focus {
             outline: none;
-            border-color: #667eea;
+            border-color = #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
 
@@ -396,11 +396,6 @@
     </style>
 </head>
 <body>
-    <!-- Header -->
-    <!-- <div class="header">
-        <h1>{{ 'Edit Frame' if edit_mode else 'Add New Frame' }}</h1>
-    </div> -->
-
     <!-- Success Toast -->
     <div class="toast" id="successToast">
         <span>✓</span>
@@ -536,7 +531,7 @@
                             {% for image_url in frame.image_urls %}
                             <div class="preview-item">
                                 <img src="{{ image_url }}" class="preview-img" alt="Product Image">
-                                <button type="button" class="remove-btn" onclick="removeImage(this)">×</button>
+                                <button type="button" class="remove-btn" onclick="removeProductImage(this)">×</button>
                             </div>
                             {% endfor %}
                         {% endif %}
@@ -620,16 +615,22 @@
     const FLASK_BASE_URL = '{{ FLASK_BASE_URL }}' || window.location.origin;
     const USE_PROXY = {{ 'true' if USE_PROXY else 'false' }};
     
+    // Helper to build API URL - FIXED: Use direct endpoints for categories
     // Helper to build API URL
-    function getApiUrl(endpoint) {
-        if (USE_PROXY) {
-            // Use Flask proxy endpoint
-            return FLASK_BASE_URL + '/api/proxy/' + endpoint;
-        } else {
-            // Direct backend (won't work with HTTPS)
-            return 'http://192.168.1.80:9000/api/' + endpoint;
-        }
+function getApiUrl(endpoint) {
+    // For categories, use direct Flask endpoints
+    if (endpoint.includes('main-categories') || endpoint.includes('sub-categories')) {
+        return FLASK_BASE_URL + '/api/' + endpoint;
     }
+    
+    // For frames, ALWAYS use proxy (frames need to go to Node.js backend)
+    if (endpoint.includes('frames')) {
+        return FLASK_BASE_URL + '/api/proxy/' + endpoint;
+    }
+    
+    // Default to proxy for other endpoints
+    return FLASK_BASE_URL + '/api/proxy/' + endpoint;
+}
     
     // Global variables
     let productImages = [];
@@ -647,9 +648,13 @@
         // Load categories
         loadMainCategories();
         
-        // If edit mode, load frame data
-        if (editMode && frameId) {
-            loadFrameData();
+        // Initialize colors from form if in edit mode
+        if (editMode) {
+            const colorsInput = document.getElementById('colors');
+            if (colorsInput && colorsInput.value) {
+                colors = colorsInput.value.split(',').filter(c => c.trim() !== '');
+                updateColorTags();
+            }
         }
         
         // Setup event listeners
@@ -680,18 +685,31 @@
         });
     }
     
-    // Simple category loading
     async function loadMainCategories() {
         try {
             const response = await fetch(getApiUrl('main-categories'));
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             const data = await response.json();
             
             if (data.success && data.data) {
                 mainCategories = data.data;
                 populateMainCategories();
+                
+                // If editing, select the saved main category
+                if (editMode && frameId && window.selectedMainCategory && window.selectedMainCategory._id) {
+                    const mainCatSelect = document.getElementById('mainCategory');
+                    mainCatSelect.value = window.selectedMainCategory._id;
+                    // Load sub-categories for this main category
+                    loadSubCategories(window.selectedMainCategory._id);
+                }
+            } else {
+                showToast('Error loading categories: ' + (data.error || 'Unknown error'), 'error');
             }
         } catch (error) {
             console.log('Error loading categories:', error);
+            showToast('Error loading categories: ' + error.message, 'error');
         }
     }
     
@@ -714,15 +732,27 @@
         
         try {
             const response = await fetch(getApiUrl('sub-categories/main-category/' + mainCategoryId));
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             const data = await response.json();
             
             if (data.success && data.data) {
                 subCategories = data.data;
                 populateSubCategories();
+                
+                // If editing, select the saved sub category
+                if (editMode && frameId && window.selectedSubCategory && window.selectedSubCategory._id) {
+                    select.value = window.selectedSubCategory._id;
+                }
+            } else {
+                select.innerHTML = '<option value="">No sub-categories available</option>';
+                select.disabled = false;
             }
         } catch (error) {
             console.log('Error loading sub-categories:', error);
-            select.innerHTML = '<option value="">Error loading</option>';
+            select.innerHTML = '<option value="">Error loading sub-categories</option>';
+            select.disabled = false;
         }
     }
     
@@ -731,7 +761,8 @@
         select.innerHTML = '<option value="">Select Sub Category</option>';
         
         if (subCategories.length === 0) {
-            select.innerHTML = '<option value="">No sub-categories</option>';
+            select.innerHTML = '<option value="">No sub-categories available</option>';
+            select.disabled = false;
             return;
         }
         
@@ -751,7 +782,7 @@
         select.disabled = true;
     }
     
-    // File handling (keep your existing functions, just make sure they work)
+    // File handling
     function handleImagesUpload(e) {
         const files = Array.from(e.target.files);
         const maxImages = 5;
@@ -774,6 +805,7 @@
                     preview: event.target.result
                 });
                 updateImagesPreview();
+                updateImageCount();
             };
             reader.readAsDataURL(file);
         });
@@ -831,80 +863,215 @@
         }
     }
     
-    // Form submission
-    async function handleSubmit() {
-        // Basic validation
-        if (!validateForm()) return;
-        
-        showLoading('Saving...');
-        
-        try {
-            const formData = new FormData();
-            
-            // Add form fields
-            const fields = ['name', 'brand', 'price', 'quantity', 'type', 'shape', 'size', 
-                          'description', 'mainCategory', 'subCategory'];
-            fields.forEach(function(field) {
-                const element = document.getElementById(field);
-                if (element && element.value) {
-                    formData.append(field, element.value);
-                }
-            });
-            
-            // Add colors
-            if (colors.length > 0) {
-                formData.append('colors', colors.join(','));
-            }
-            
-            // Add images
-            productImages.forEach(function(image) {
-                formData.append('images', image.file);
-            });
-            
-            if (overlayImage) {
-                formData.append('overlayImage', overlayImage.file);
-            }
-            
-            // Determine endpoint
-            let endpoint, method;
-            if (editMode && frameId) {
-                endpoint = getApiUrl('frames/' + frameId);
-                method = 'PUT';
-                formData.append('_id', frameId);
-            } else {
-                endpoint = getApiUrl('frames');
-                method = 'POST';
-            }
-            
-            // Send request
-            const response = await fetch(endpoint, {
-                method: method,
-                body: formData
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                showToast('Frame saved successfully!');
-                if (!editMode) {
-                    setTimeout(function() {
-                        clearForm();
-                    }, 1500);
-                }
-            } else {
-                throw new Error(data.error || 'Failed to save');
-            }
-        } catch (error) {
-            showToast('Error: ' + error.message, 'error');
-        } finally {
-            hideLoading();
+    function removeProductImage(index) {
+        productImages.splice(index, 1);
+        updateImagesPreview();
+        updateImageCount();
+    }
+    
+    function removeOverlay() {
+        overlayImage = null;
+        updateOverlayPreview();
+    }
+    
+    function updateImageCount() {
+        const countElement = document.getElementById('imageCount');
+        if (countElement) {
+            countElement.textContent = `${productImages.length}/5 images`;
         }
     }
     
-    // Helper functions
+    // Color handling
+    function addColor() {
+        const colorInput = document.getElementById('colorInput');
+        const color = colorInput.value.trim();
+        
+        if (!color) {
+            alert('Please enter a color');
+            return;
+        }
+        
+        if (colors.includes(color)) {
+            alert('Color already added');
+            return;
+        }
+        
+        colors.push(color);
+        updateColorTags();
+        colorInput.value = '';
+    }
+    
+    function removeColor(element) {
+        const colorTag = element.closest('.color-tag');
+        const color = colorTag.textContent.replace('×', '').trim();
+        
+        const index = colors.indexOf(color);
+        if (index > -1) {
+            colors.splice(index, 1);
+            updateColorTags();
+        }
+    }
+    
+    function updateColorTags() {
+        const container = document.getElementById('colorTags');
+        container.innerHTML = '';
+        
+        colors.forEach(function(color) {
+            const span = document.createElement('span');
+            span.className = 'color-tag';
+            span.innerHTML = `
+                ${color}
+                <span class="color-tag-remove" onclick="removeColor(this)">×</span>
+            `;
+            container.appendChild(span);
+        });
+        
+        // Update hidden input
+        document.getElementById('colors').value = colors.join(',');
+    }
+    
+    // Form submission - Shows actual backend errors
+async function handleSubmit() {
+    if (!validateForm()) return;
+    
+    showLoading('Saving...');
+    
+    try {
+        const formData = new FormData();
+        
+        // Add form fields
+        const fields = ['name', 'brand', 'price', 'quantity', 'type', 'shape', 'size', 'description'];
+        fields.forEach(function(field) {
+            const element = document.getElementById(field);
+            if (element && element.value) {
+                formData.append(field, element.value);
+            }
+        });
+        
+        // Add categories
+        const mainCategoryId = document.getElementById('mainCategory').value;
+        const subCategoryId = document.getElementById('subCategory').value;
+        
+        if (mainCategoryId) {
+            formData.append('mainCategory', mainCategoryId);
+        }
+        
+        if (subCategoryId) {
+            formData.append('subCategory', subCategoryId);
+        }
+        
+        // Add colors
+        if (colors.length > 0) {
+            formData.append('colors', colors.join(','));
+        }
+        
+        // Add images
+        if (productImages.length === 0) {
+            throw new Error('Please add at least one product image');
+        }
+        
+        productImages.forEach(function(image) {
+            formData.append('images', image.file);
+        });
+        
+        if (!overlayImage) {
+            throw new Error('Please add an overlay image');
+        }
+        formData.append('overlayImage', overlayImage.file);
+        
+        // Determine endpoint
+        let endpoint;
+        if (editMode && frameId) {
+            endpoint = FLASK_BASE_URL + '/api/proxy/frames/' + frameId;
+        } else {
+            endpoint = FLASK_BASE_URL + '/api/proxy/frames';
+        }
+        
+        // Send request
+        const response = await fetch(endpoint, {
+            method: editMode && frameId ? 'PUT' : 'POST',
+            body: formData
+        });
+        
+        console.log('Response status:', response.status);
+        
+        // Get response data
+        const data = await response.json();
+        console.log('Response data:', data);
+        
+        // Check response
+        if (response.status === 200 || response.status === 201) {
+            // Success
+            showToast(data.message || 'Frame saved successfully!');
+            setTimeout(function() {
+                if (!editMode) {
+                    clearForm();
+                }
+                handleCancel();
+            }, 1500);
+        } else {
+            // Error - show the actual error from backend
+            const errorMessage = data.error || `Failed to save frame (Status: ${response.status})`;
+            showToast('❌ ' + errorMessage, 'error');
+        }
+        
+    } catch (error) {
+        console.error('Submission error:', error);
+        showToast('❌ Error: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+    
     function validateForm() {
-        // Simple validation - add your validation logic here
-        return true;
+        let isValid = true;
+        
+        // Clear previous errors
+        document.querySelectorAll('.error-message').forEach(el => {
+            el.style.display = 'none';
+        });
+        
+        // Check required fields
+        const requiredFields = [
+            {id: 'name', errorId: 'nameError', message: 'Please enter a frame name'},
+            {id: 'brand', errorId: 'brandError', message: 'Please enter a brand name'},
+            {id: 'price', errorId: 'priceError', message: 'Please enter a valid price'},
+            {id: 'quantity', errorId: 'quantityError', message: 'Please enter quantity'},
+            {id: 'type', errorId: 'typeError', message: 'Please select a type'},
+            {id: 'shape', errorId: 'shapeError', message: 'Please select a shape'},
+            {id: 'size', errorId: 'sizeError', message: 'Please select a size'},
+            {id: 'mainCategory', errorId: 'mainCategoryError', message: 'Please select a main category'},
+            {id: 'subCategory', errorId: 'subCategoryError', message: 'Please select a sub category'}
+        ];
+        
+        requiredFields.forEach(function(field) {
+            const element = document.getElementById(field.id);
+            if (!element || !element.value.trim()) {
+                document.getElementById(field.errorId).textContent = field.message;
+                document.getElementById(field.errorId).style.display = 'block';
+                isValid = false;
+            }
+        });
+        
+        // Check colors
+        if (colors.length === 0) {
+            document.getElementById('colorsError').style.display = 'block';
+            isValid = false;
+        }
+        
+        // Check images
+        if (productImages.length === 0) {
+            document.getElementById('imagesError').style.display = 'block';
+            isValid = false;
+        }
+        
+        // Check overlay
+        if (!overlayImage) {
+            document.getElementById('overlayError').style.display = 'block';
+            isValid = false;
+        }
+        
+        return isValid;
     }
     
     function showLoading(text) {
@@ -919,7 +1086,7 @@
         if (overlay) overlay.style.display = 'none';
     }
     
-    function showToast(message, type) {
+    function showToast(message, type = 'success') {
         const toast = document.getElementById('successToast');
         const msgEl = document.getElementById('toastMessage');
         if (msgEl) msgEl.textContent = message;
@@ -938,6 +1105,60 @@
             window.FlutterChannel.postMessage(JSON.stringify({type: 'cancel'}));
         }
     }
-</script>
+    
+    function clearForm() {
+        // Clear all form fields
+        document.getElementById('frameForm').reset();
+        productImages = [];
+        overlayImage = null;
+        colors = [];
+        subCategories = [];
+        
+        updateImagesPreview();
+        updateOverlayPreview();
+        updateColorTags();
+        updateImageCount();
+        resetSubCategory();
+        
+        // Clear validation errors
+        document.querySelectorAll('.error-message').forEach(el => {
+            el.style.display = 'none';
+        });
+    }
+    
+    // For edit mode - this data should be passed from Flask template
+{% if edit_mode and frame.mainCategory %}
+// Store just the ID for selection
+const mainCatId = "{{ frame.mainCategory }}";
+if (mainCatId) {
+    // We'll select this after categories load
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(function() {
+            const select = document.getElementById('mainCategory');
+            if (select && mainCatId) {
+                select.value = mainCatId;
+                // Trigger change to load sub-categories
+                select.dispatchEvent(new Event('change'));
+            }
+        }, 500); // Wait for categories to load
+    });
+}
+{% endif %}
+
+{% if edit_mode and frame.subCategory %}
+const subCatId = "{{ frame.subCategory }}";
+if (subCatId) {
+    // We'll select this after sub-categories load
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(function() {
+            const select = document.getElementById('subCategory');
+            if (select && subCatId) {
+                select.value = subCatId;
+            }
+        }, 1000); // Wait longer for sub-categories to load
+    });
+}
+{% endif %}
+    </script>
 </body>
 </html>

@@ -477,50 +477,81 @@ class FaceShapeAnalyzer:
         self.shape_history = []
         self.optimal_distance_count = 0
 
+# -------------------- NEW CATEGORY ENDPOINTS --------------------
+@app.route('/api/main-categories', methods=['GET'])
+def api_main_categories():
+    """API endpoint to get main categories from backend"""
+    try:
+        resp = requests.get(f"{BACKEND_URL}/api/main-categories", timeout=30)
+        if resp.ok:
+            data = resp.json()
+            return jsonify(data)
+        else:
+            return jsonify({'success': False, 'error': 'Backend error'}), resp.status_code
+    except Exception as e:
+        print(f"Error fetching main categories: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/sub-categories/main-category/<main_category_id>', methods=['GET'])
+def api_sub_categories_by_main(main_category_id):
+    """API endpoint to get sub categories filtered by main category"""
+    try:
+        url = f"{BACKEND_URL}/api/sub-categories/main-category/{main_category_id}"
+        
+        resp = requests.get(url, timeout=30)
+        if resp.ok:
+            data = resp.json()
+            return jsonify(data)
+        else:
+            return jsonify({'success': False, 'error': 'Backend error'}), resp.status_code
+    except Exception as e:
+        print(f"Error fetching sub-categories: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # -------------------- CLIENT CAMERA ENDPOINTS --------------------
 
 # Add this route BEFORE your other routes
 @app.route('/api/proxy/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
 def proxy_to_backend(subpath):
-    """Proxy API requests to Node.js backend"""
+    """Simple proxy that forwards requests and returns actual error messages"""
     try:
-        # Build the target URL
         node_backend = 'https://ar-eyewear-try-on-backend-1.onrender.com'
         url = f"{node_backend}/api/{subpath}"
         
-        # Forward headers (remove Host header to avoid issues)
-        headers = {key: value for key, value in request.headers if key.lower() != 'host'}
+        print(f"📡 PROXY: {request.method} {subpath}")
         
-        # Add CORS headers for cross-origin requests
-        headers['Origin'] = request.host_url.rstrip('/')
+        # Prepare files and data
+        files = {}
+        data = {}
         
-        # Handle different request methods
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            for key in request.files:
+                file = request.files[key]
+                files[key] = (file.filename, file, file.content_type)
+            
+            for key in request.form:
+                data[key] = request.form[key]
+        
+        # Simple headers
+        headers = {'Origin': request.host_url.rstrip('/')}
+        
+        # Make request
+        timeout = 30
         if request.method == 'GET':
-            resp = requests.get(url, params=request.args, headers=headers, timeout=30)
+            resp = requests.get(url, params=request.args, headers=headers, timeout=timeout)
         elif request.method == 'POST':
-            # Handle multipart/form-data (file uploads)
-            if request.content_type and 'multipart/form-data' in request.content_type:
-                files = request.files
-                data = request.form.to_dict()
-                resp = requests.post(url, files=files, data=data, headers=headers, timeout=30)
+            if files:
+                resp = requests.post(url, files=files, data=data, headers=headers, timeout=timeout)
             else:
-                # Handle JSON or form data
-                data = request.get_data()
-                resp = requests.post(url, data=data, headers=headers, 
-                                   json=request.json if request.is_json else None, timeout=30)
+                resp = requests.post(url, headers=headers, timeout=timeout, json=request.json)
         elif request.method == 'PUT':
-            if request.content_type and 'multipart/form-data' in request.content_type:
-                files = request.files
-                data = request.form.to_dict()
-                resp = requests.put(url, files=files, data=data, headers=headers, timeout=30)
+            if files:
+                resp = requests.put(url, files=files, data=data, headers=headers, timeout=timeout)
             else:
-                data = request.get_data()
-                resp = requests.put(url, data=data, headers=headers,
-                                  json=request.json if request.is_json else None, timeout=30)
+                resp = requests.put(url, headers=headers, timeout=timeout, json=request.json)
         elif request.method == 'DELETE':
-            resp = requests.delete(url, headers=headers, timeout=30)
+            resp = requests.delete(url, headers=headers, timeout=timeout)
         elif request.method == 'OPTIONS':
-            # Handle CORS preflight
             response = Response(status=200)
             response.headers.add('Access-Control-Allow-Origin', '*')
             response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
@@ -529,26 +560,47 @@ def proxy_to_backend(subpath):
         else:
             return jsonify({'error': 'Method not allowed'}), 405
         
-        # Return the response with CORS headers
-        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
-        response_headers = [(name, value) for (name, value) in resp.raw.headers.items() 
-                          if name.lower() not in excluded_headers]
+        print(f"📥 Response status: {resp.status_code}")
         
-        # Add CORS headers
-        response_headers.append(('Access-Control-Allow-Origin', '*'))
+        # Try to get the actual response from backend
+        try:
+            backend_response = resp.json()
+            print(f"📥 Backend response: {backend_response}")
+            
+            # If success (200/201), return success
+            if resp.status_code in [200, 201]:
+                return jsonify({
+                    'success': True,
+                    'message': 'Frame saved successfully!',
+                    'status': resp.status_code,
+                    'data': backend_response.get('data')
+                })
+            else:
+                # Return the actual error from backend
+                return jsonify({
+                    'success': False,
+                    'error': backend_response.get('error', f'Backend returned {resp.status_code}'),
+                    'status': resp.status_code
+                }), resp.status_code
+                
+        except:
+            # If can't parse JSON, just check status
+            if resp.status_code in [200, 201]:
+                return jsonify({
+                    'success': True,
+                    'message': 'Frame saved successfully!',
+                    'status': resp.status_code
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': f'Backend returned {resp.status_code}',
+                    'status': resp.status_code
+                }), resp.status_code
         
-        response = Response(resp.content, resp.status_code, response_headers)
-        return response
-        
-    except requests.exceptions.Timeout:
-        print(f"Proxy timeout for {subpath}")
-        return jsonify({'error': 'Backend request timeout'}), 504
-    except requests.exceptions.RequestException as e:
-        print(f"Proxy error for {subpath}: {e}")
-        return jsonify({'error': f'Backend connection failed: {str(e)}'}), 500
     except Exception as e:
-        print(f"Unexpected proxy error: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+        print(f"Proxy error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/client_camera')
 def client_camera():
@@ -1063,18 +1115,19 @@ def video_feed():
 @app.route('/frame_management/add')
 def add_frame():
     """Add new frame page"""
+    print("✓ Loading add frame page")
+    # IMPORTANT: Set USE_PROXY to False since we have direct endpoints
     return render_template('frame_form.html', 
                           edit_mode=False, 
                           frame={},
                           FLASK_BASE_URL=request.host_url.rstrip('/'),
-                          USE_PROXY=True,  # Tell template to use proxy
-                          NODE_BACKEND_URL=request.host_url.rstrip('/'))  # Use Flask URL for API
+                          USE_PROXY=False,  # CHANGED TO FALSE - use direct endpoints
+                          NODE_BACKEND_URL=request.host_url.rstrip('/'))
 
 @app.route('/frame_management/edit/<frame_id>')
 def edit_frame(frame_id):
     """Edit existing frame page"""
     try:
-        # Use hosted backend to get frame data
         response = requests.get(f"{BACKEND_URL}/api/frames/{frame_id}", timeout=30)
         
         if not response.ok:
@@ -1087,7 +1140,7 @@ def edit_frame(frame_id):
         
         frame_data = data.get('data', {})
         
-        # Prepare frame object
+        # Prepare frame object - FIXED: Extract just the ID strings
         frame = {
             'id': frame_id,
             'name': frame_data.get('name', ''),
@@ -1099,33 +1152,40 @@ def edit_frame(frame_id):
             'size': frame_data.get('size', ''),
             'description': frame_data.get('description', ''),
             'colors': frame_data.get('colors', []),
-            'mainCategory': frame_data.get('mainCategory', {}),
-            'subCategory': frame_data.get('subCategory', {})
+            # Extract just the ID strings, not full objects
+            'mainCategory': frame_data.get('mainCategory', {}).get('_id', '') 
+                if isinstance(frame_data.get('mainCategory'), dict) 
+                else frame_data.get('mainCategory', ''),
+            'subCategory': frame_data.get('subCategory', {}).get('_id', '')
+                if isinstance(frame_data.get('subCategory'), dict)
+                else frame_data.get('subCategory', '')
         }
         
-        # Get image URLs from hosted backend
+        # Get image URLs
         if frame_data.get('_id'):
             fid = str(frame_data['_id'])
             
-            # Product images
             image_urls = []
             if frame_data.get('images'):
                 for i in range(len(frame_data['images'])):
                     image_urls.append(f"{BACKEND_URL}/api/frames/images/{fid}/{i}")
             frame['image_urls'] = image_urls
             
-            # Overlay image
             if frame_data.get('overlayImage'):
                 frame['overlay_url'] = f"{BACKEND_URL}/api/frames/images/{fid}/overlay"
+        
+        print(f"✓ Loaded frame for edit: {frame['name']}")
+        print(f"  Main Category ID: {frame.get('mainCategory', 'None')}")
+        print(f"  Sub Category ID: {frame.get('subCategory', 'None')}")
         
         return render_template('frame_form.html', 
                           edit_mode=True, 
                           frame=frame,
                           FLASK_BASE_URL=request.host_url.rstrip('/'),
-                          USE_PROXY=True,
+                          USE_PROXY=False,
                           NODE_BACKEND_URL=request.host_url.rstrip('/'))
     except Exception as e:
-        print(f"Error loading frame for edit: {e}")
+        print(f"✗ Error loading frame for edit: {e}")
         return "Error loading frame", 500
 
 def generate_frames():
