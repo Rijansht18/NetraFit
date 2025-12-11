@@ -183,7 +183,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   frame: frame,
                   width: 160,
                   height: 250,
-                  showCartButton: false, // No cart button in home
                 ),
               );
             },
@@ -202,19 +201,16 @@ class _HomeScreenState extends State<HomeScreen> {
           ? AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.menu, color: Colors.black),
-          onPressed: () {},
-        ),
-        title: const Text(
-          'NETRA',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Colors.black,
+        centerTitle: false, // important
+        title: Align(
+          alignment: Alignment.centerLeft,
+          child: Image.asset(
+            "assets/logo/logo2.png",
+            width: 100,
+            height: 100,
+            fit: BoxFit.contain,
           ),
         ),
-        centerTitle: true,
         actions: [
           // Cart Button with dynamic badge
           Consumer<CartProvider>(
@@ -400,61 +396,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
 
           const SizedBox(height: 24),
-
-          // Featured Products
-          if (_featuredFrames.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Featured Products',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _currentIndex = 1; // Navigate to Shop
-                      });
-                    },
-                    child: const Text(
-                      'View All',
-                      style: TextStyle(
-                        color: Color(0xFF275BCD),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: 0.7,
-              ),
-              itemCount: _featuredFrames.length,
-              itemBuilder: (context, index) {
-                final frame = _featuredFrames[index];
-                return FrameCard(
-                  frame: frame,
-                  showCartButton: false, // No cart button in home featured
-                );
-              },
-            ),
-
-            const SizedBox(height: 32),
-          ],
 
           // Categories with Frames
           if (_mainCategories.isNotEmpty) ...[

@@ -174,17 +174,13 @@ class _ShopScreenState extends State<ShopScreen> {
           crossAxisCount: 2,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-          childAspectRatio: 0.8,
+          childAspectRatio: 0.65,
         ),
         itemCount: _allFrames.length,
         itemBuilder: (context, index) {
           final frame = _allFrames[index];
-          return Container(
-            constraints: const BoxConstraints(
-              maxHeight: 400,
-            ),
-            child: FrameCard(frame: frame),
-          );
+          return FrameCard(frame: frame,height: 250,);
+
         },
       );
     } else {
@@ -212,17 +208,13 @@ class _ShopScreenState extends State<ShopScreen> {
           crossAxisCount: 2,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-          childAspectRatio: 0.8,
+          childAspectRatio: 0.65,
         ),
         itemCount: frames.length,
         itemBuilder: (context, index) {
           final frame = frames[index];
-          return Container(
-            constraints: const BoxConstraints(
-              maxHeight: 400,
-            ),
-            child: FrameCard(frame: frame),
-          );
+          return
+            FrameCard(frame: frame);
         },
       );
     }
