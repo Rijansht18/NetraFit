@@ -1117,15 +1117,6 @@ class _TryOnScreenState extends State<TryOnScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'रु ${frame.price.toInt()}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF275BCD),
-                      ),
-                    ),
                   ],
                 ),
               ),

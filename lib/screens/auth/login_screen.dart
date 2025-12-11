@@ -369,58 +369,58 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: 30),
 
-                // OR CONTINUE WITH
-                const Row(
-                  children: [
-                    Expanded(
-                      child: Divider(
-                        color: Colors.grey,
-                        thickness: 1,
-                      ),
-                    ),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        "OR CONTINUE WITH",
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Divider(
-                        color: Colors.grey,
-                        thickness: 1,
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 20),
-
-                // Social Buttons
-                Column(
-                  children: [
-                    _buildSocialButton(
-                      text: "Continue with Google",
-                      textColor: Colors.black,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildSocialButton(
-                      text: "Continue with Apple",
-                      textColor: Colors.black,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildSocialButton(
-                      text: "Continue with Facebook",
-                      textColor: Colors.black,
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 30),
+                // // OR CONTINUE WITH
+                // const Row(
+                //   children: [
+                //     Expanded(
+                //       child: Divider(
+                //         color: Colors.grey,
+                //         thickness: 1,
+                //       ),
+                //     ),
+                //     Padding(
+                //       padding: EdgeInsets.symmetric(horizontal: 16),
+                //       child: Text(
+                //         "OR CONTINUE WITH",
+                //         style: TextStyle(
+                //           color: Colors.grey,
+                //           fontSize: 14,
+                //           fontWeight: FontWeight.w500,
+                //         ),
+                //       ),
+                //     ),
+                //     Expanded(
+                //       child: Divider(
+                //         color: Colors.grey,
+                //         thickness: 1,
+                //       ),
+                //     ),
+                //   ],
+                // ),
+                //
+                // const SizedBox(height: 20),
+                //
+                // // Social Buttons
+                // Column(
+                //   children: [
+                //     _buildSocialButton(
+                //       text: "Continue with Google",
+                //       textColor: Colors.black,
+                //     ),
+                //     const SizedBox(height: 12),
+                //     _buildSocialButton(
+                //       text: "Continue with Apple",
+                //       textColor: Colors.black,
+                //     ),
+                //     const SizedBox(height: 12),
+                //     _buildSocialButton(
+                //       text: "Continue with Facebook",
+                //       textColor: Colors.black,
+                //     ),
+                //   ],
+                // ),
+                //
+                // const SizedBox(height: 30),
 
                 // Sign Up Link
                 Center(
